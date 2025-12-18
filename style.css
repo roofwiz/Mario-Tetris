@@ -1,4 +1,18 @@
 body {
+    /* Define a color and size palette for easy maintenance */
+    --brand-red: #941a20;
+    --brand-orange: #f0ad4e;
+    --brand-blue: #337ab7;
+    --brand-blue-hover: #286090;
+    --text-light: #fff;
+    --bg-dark: #121212;
+    --bg-dark-translucent: rgba(0, 0, 0, 0.3);
+    --border-color: #555;
+
+    --card-width: 100px;
+    --card-height: 150px;
+    --board-max-width: 754px;
+
     /* Apply the watermark to the entire page background */
     background-color: #121212; /* A slightly darker base */
     font-family: 'Oswald', sans-serif;
@@ -15,29 +29,26 @@ body, html {
     display: flex;
     flex-direction: column;
     /* A semi-transparent background to distinguish the play area */
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--bg-dark-translucent);
     border: 1px solid #444;
     border-radius: 10px;
     padding: 20px;
     box-shadow: 0 0 20px rgba(0,0,0,0.5);
-    margin: 0 auto; /* Center the game board */
-    max-width: 754px;
+    margin: 0 auto;
+    max-width: var(--board-max-width);
     width: 100%;
     box-sizing: border-box;
 }
 
 /* Header and Footer styling */
 .game-header {
+    position: relative;
+    max-width: var(--board-max-width);
     margin: 10px auto;
     padding: 0 20px;
     box-sizing: border-box;
-    color: white;
-}
-
-.game-header {
+    color: var(--text-light);
     text-align: center;
-    position: relative; /* For positioning messages */
-    max-width: 754px;
 }
 
 h1 {
@@ -46,7 +57,7 @@ h1 {
 }
 
 h1 .logo-lecla {
-    color: #941a20; /* Lecla brand red */
+    color: var(--brand-red);
 }
 
 .score-area {
@@ -68,9 +79,9 @@ h1 .logo-lecla {
 }
 
 .stock, .waste, .foundation, .tableau-pile {
-    width: 100px;
-    min-height: 150px;
-    border: 2px dashed #555;
+    width: var(--card-width);
+    min-height: var(--card-height);
+    border: 2px dashed var(--border-color);
     border-radius: 10px;
     background-color: rgba(0, 0, 0, 0.2);
     position: relative;
@@ -98,8 +109,8 @@ h1 .logo-lecla {
 }
 
 .card {
-    width: 100px;
-    height: 150px;
+    width: var(--card-width);
+    height: var(--card-height);
     border-radius: 10px;
     border: 1px solid #ccc;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
@@ -202,10 +213,10 @@ h1 .logo-lecla {
 }
 
 .settings-container fieldset {
-    border: 1px solid #555;
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 2px 8px 5px 8px;
-    color: white;
+    color: var(--text-light);
 }
 
 .settings-container legend {
@@ -235,16 +246,16 @@ h1 .logo-lecla {
 }
 
 #new-game-button {
-    background-color: #f0ad4e; /* Construction orange */
+    background-color: var(--brand-orange);
     color: #1a1a1a;
 }
 
 #hint-button {
-    background-color: #337ab7; /* A nice blue */
-    color: white;
+    background-color: var(--brand-blue);
+    color: var(--text-light);
 }
 #hint-button:hover {
-    background-color: #286090;
+    background-color: var(--brand-blue-hover);
 }
 
 #new-game-button:hover {
@@ -258,15 +269,15 @@ h1 .logo-lecla {
     left: 50%;
     transform: translateX(-50%);
     font-size: 5em;
-    color: #f0ad4e;
+    color: var(--brand-orange);
     text-shadow: 0 0 10px black;
     pointer-events: none;
     animation: win-fade-in 1s ease-out;
 }
 
 @keyframes win-fade-in {
-    from { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    from { opacity: 0; transform: translateX(-50%) scale(0.5); }
+    to { opacity: 1; transform: translateX(-50%) scale(1); }
 }
 
 @keyframes hint-glow {
@@ -298,7 +309,7 @@ h1 .logo-lecla {
     transform: translateX(-50%);
     font-size: 3em;
     font-weight: 700;
-    color: #fff;
+    color: var(--text-light);
     text-shadow: 0 2px 10px #f0ad4e;
     pointer-events: none;
     z-index: 3000;
