@@ -1,0 +1,181 @@
+{
+    "images": {
+        "spritesheet": "marioallsprite.png",
+        "cloud_fallback": "cloud_sprite.png"
+    },
+    "fonts": {
+        "main": "PressStart2P-Regular.ttf"
+    },
+    "sounds": {
+        "rotate": "rotate.wav",
+        "lock": "lock.wav",
+        "clear": "clear.wav",
+        "stomp": "stomp.wav",
+        "life": "life.wav",
+        "damage": "lifelost.wav",
+        "gameover": "gameover.wav",
+        "level_up": "1up.wav",
+        "world_clear": "world_clear.wav",
+        "music": "music.mp3"
+    },
+    "sprite_coords": {
+        "koopa_green": {
+            "fly_1": {
+                "x": 287,
+                "y": 246,
+                "w": 16,
+                "h": 24
+            },
+            "fly_2": {
+                "x": 328,
+                "y": 246,
+                "w": 16,
+                "h": 24
+            },
+            "walk_1": {
+                "x": 206,
+                "y": 246,
+                "w": 19,
+                "h": 24
+            },
+            "walk_2": {
+                "x": 246,
+                "y": 246,
+                "w": 19,
+                "h": 24
+            },
+            "shell_1": {
+                "x": 369,
+                "y": 254,
+                "w": 16,
+                "h": 16
+            },
+            "shell_2": {
+                "x": 410,
+                "y": 254,
+                "w": 16,
+                "h": 16
+            },
+            "shell_3": {
+                "x": 451,
+                "y": 254,
+                "w": 16,
+                "h": 16
+            },
+            "shell_4": {
+                "x": 492,
+                "y": 254,
+                "w": 16,
+                "h": 16
+            }
+        },
+        "koopa_red": {
+            "fly_1": {
+                "x": 290,
+                "y": 285,
+                "w": 16,
+                "h": 24
+            },
+            "fly_2": {
+                "x": 331,
+                "y": 285,
+                "w": 16,
+                "h": 24
+            },
+            "walk_1": {
+                "x": 209,
+                "y": 285,
+                "w": 19,
+                "h": 24
+            },
+            "walk_2": {
+                "x": 250,
+                "y": 285,
+                "w": 19,
+                "h": 24
+            },
+            "shell_1": {
+                "x": 372,
+                "y": 293,
+                "w": 16,
+                "h": 16
+            },
+            "shell_2": {
+                "x": 413,
+                "y": 293,
+                "w": 16,
+                "h": 16
+            },
+            "shell_3": {
+                "x": 454,
+                "y": 293,
+                "w": 16,
+                "h": 16
+            },
+            "shell_4": {
+                "x": 495,
+                "y": 293,
+                "w": 16,
+                "h": 16
+            }
+        },
+        "spiny": {
+            "walk_1": {
+                "x": 128,
+                "y": 7,
+                "w": 16,
+                "h": 16
+            },
+            "walk_2": {
+                "x": 169,
+                "y": 7,
+                "w": 14,
+                "h": 16
+            }
+        },
+        "cloud": {
+            "walk_1": {
+                "x": 202,
+                "y": 408,
+                "w": 27,
+                "h": 14
+            }
+        },
+        "mario": {
+            "stand": {
+                "x": 10,
+                "y": 7,
+                "w": 12,
+                "h": 15
+            },
+            "walk": {
+                "x": 50,
+                "y": 7,
+                "w": 12,
+                "h": 15
+            }
+        },
+        "luigi": {
+            "stand": {
+                "x": 10,
+                "y": 7,
+                "w": 12,
+                "h": 15
+            },
+            "walk": {
+                "x": 50,
+                "y": 7,
+                "w": 12,
+                "h": 15
+            }
+        },
+        "fire_flower": {
+            "idle_1": {
+                "x": 208,
+                "y": 405,
+                "w": 16,
+                "h": 16
+            }
+        }
+    }
+}
