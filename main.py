@@ -1144,56 +1144,76 @@ class Tetromino:
 
 
 def draw_3d_block(surface, color, x, y, size):
-    # Main Face
-    pygame.draw.rect(surface, color, (x, y, size, size))
-    
-    # Highlights (Bevel)
+    # Premium "Gem" Style Block
+    # 1. Base Gradient (Darker at bottom)
     r, g, b = color[:3]
-    light = (min(255, r+60), min(255, g+60), min(255, b+60))
-    dark = (max(0, r-60), max(0, g-60), max(0, b-60))
+    h, s, v = pygame.Color(r, g, b).hsla[:3]
     
-    b_sz = 4 # Bevel size
+    # Create gradient effect
+    for i in range(size):
+        # Darken as we go down
+        shade = max(0, 1.0 - (i / size) * 0.4) 
+        row_color = (int(r * shade), int(g * shade), int(b * shade))
+        pygame.draw.line(surface, row_color, (x, y + i), (x + size, y + i))
+        
+    # 2. Glassy Highlight (Top Left Triangle)
+    s_high = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.polygon(s_high, (255, 255, 255, 60), [(0,0), (size, 0), (0, size)])
+    surface.blit(s_high, (x, y))
+
+    # 3. Inner Shine (Top Left Dot)
+    pygame.draw.circle(surface, (255, 255, 255, 180), (x + 4, y + 4), 2)
     
-    # Top/Left Light
-    pygame.draw.rect(surface, light, (x, y, size, b_sz)) # Top
-    pygame.draw.rect(surface, light, (x, y, b_sz, size)) # Left
-    
-    # Bottom/Right Dark
-    pygame.draw.rect(surface, dark, (x, y+size-b_sz, size, b_sz)) # Bottom
-    pygame.draw.rect(surface, dark, (x+size-b_sz, y, b_sz, size)) # Right
-    
-    # Inner Face
-    pygame.draw.rect(surface, color, (x+b_sz, y+b_sz, size-2*b_sz, size-2*b_sz))
+    # 4. Refined Border
+    pygame.draw.rect(surface, (255, 255, 255), (x, y, size, size), 1) # Outer thin light outline
+    pygame.draw.rect(surface, (0, 0, 0, 100), (x, y, size, size), 2) # Inner dark definition
 
 class Block:
-    def __init__(self, color, block_type='normal'):
+    def __init__(self, color, block_type='normal', sprite_data=None):
         self.color = color
         self.type = block_type
         self.anim_offset = random.random() * 10 
-        self.hit = False # For Question blocks
+        self.hit = False
+        self.sprite_data = sprite_data # {'sprite': '...', 'category': '...'}
 
     def get_image(self, sprite_manager, timer):
-        if self.type == 'normal':
-            sprite_name = COLOR_TO_SPRITE.get(self.color)
-            if sprite_name:
-                return sprite_manager.get_sprite('tetris_blocks', sprite_name, scale_factor=BLOCK_SIZE/32.0)
-            return None # Use draw_3d_block
-        
+        # 1. New Sprite Mapping System
+        if self.sprite_data:
+            cat = self.sprite_data.get('category')
+            name = self.sprite_data.get('sprite')
+            
+            # 2. Animated Enemies
+            if cat in ['koopa_green', 'koopa_red', 'spiny']:
+                # Use frames. Note: we need to handle "walk" prefix or not
+                frames = sprite_manager.get_animation_frames(cat, prefix='walk', scale_factor=2.0)
+                if not frames and 'walk_1' in name: # Fallback if specific sprite name given
+                     pass 
+                
+                if frames:
+                    # Animation speed
+                    idx = int((timer + self.anim_offset) * 6) % len(frames)
+                    return frames[idx]
+            
+            # 3. Static Items / Blocks
+            # Map category to sheet name in assets.json keys
+            # 'blocks', 'items' are direct keys.
+            img = sprite_manager.get_sprite(cat, name, scale_factor=2.0)
+            if img: return img
+
+        # Fallbacks for legacy types
         if self.type == 'question':
             if self.hit:
-                return sprite_manager.get_sprite('blocks', 'empty', scale_factor=BLOCK_SIZE/16/2.0)
-            # 3 frame animation
+                return sprite_manager.get_sprite('blocks', 'empty', scale_factor=2.0)
             f_idx = int((timer * 2 + self.anim_offset) % 3) + 1
-            return sprite_manager.get_sprite('blocks', f'question_{f_idx}', scale_factor=BLOCK_SIZE/16/2.0)
+            return sprite_manager.get_sprite('blocks', f'question_{f_idx}', scale_factor=2.0)
             
         if self.type == 'brick':
-            return sprite_manager.get_sprite('blocks', 'brick', scale_factor=BLOCK_SIZE/16/2.0)
+            return sprite_manager.get_sprite('blocks', 'brick', scale_factor=2.0)
             
         if self.type == 'coin':
-            # 3 frame ping-pong: 1, 2, 3, 2
             frames = [1, 2, 3, 2]
             f_idx = frames[int((timer * 8 + self.anim_offset) % 4)]
-            return sprite_manager.get_sprite('items', f'coin_{f_idx}', scale_factor=BLOCK_SIZE/16/2.0)
+            return sprite_manager.get_sprite('items', f'coin_{f_idx}', scale_factor=2.0)
             
         return None
 
@@ -1245,10 +1265,16 @@ class Grid:
         return False
 
     def lock_piece(self, piece):
+        # Retrieve sprite data from config based on piece name
+        t_data = TETROMINO_DATA.get(piece.name, {})
+        sprite_data = None
+        if 'sprite' in t_data:
+            sprite_data = {'sprite': t_data['sprite'], 'category': t_data['category']}
+            
         for bx, by in piece.blocks:
             gx, gy = int(piece.x + bx), int(piece.y + by)
             if 0 <= gy < GRID_HEIGHT and 0 <= gx < GRID_WIDTH:
-                self.grid[gy][gx] = Block(piece.color)
+                self.grid[gy][gx] = Block(piece.color, sprite_data=sprite_data)
 
     def clear_lines(self):
         lines_cleared = 0
@@ -1293,7 +1319,14 @@ class Grid:
             
             # Border Glow
             glow_color = (100, 100, 255) if level % 2 == 0 else (255, 100, 100)
-            pygame.draw.rect(screen, glow_color, bg_rect, 2)
+            
+            # Glow Effect
+            for i in range(5):
+                alpha = 100 - i * 20
+                s_glow = pygame.Surface((PLAYFIELD_WIDTH + i*4, PLAYFIELD_HEIGHT + i*4), pygame.SRCALPHA)
+                msg_col = glow_color + (alpha,)
+                pygame.draw.rect(s_glow, msg_col, (0, 0, s_glow.get_width(), s_glow.get_height()), 2)
+                screen.blit(s_glow, (PLAYFIELD_X - i*2, PLAYFIELD_Y - i*2))
             # Inner line
             pygame.draw.rect(screen, (50, 50, 50), bg_rect, 1)
 
@@ -1585,19 +1618,20 @@ class Tetris:
         self.camera_x = 0 # Init Camera Pan
         
         # Load Complex Frames (Dicts)
+        # Load Complex Frames (Dicts)
         Tetris.TURTLE_FRAMES = {
-            'fly': self.sprite_manager.get_animation_frames('koopa_green', prefix='fly'),
-            'walk': self.sprite_manager.get_animation_frames('koopa_green', prefix='walk'),
-            'shell': self.sprite_manager.get_animation_frames('koopa_green', prefix='shell')
+            'fly': self.sprite_manager.get_animation_frames('koopa_green', scale_factor=2.5, prefix='fly'),
+            'walk': self.sprite_manager.get_animation_frames('koopa_green', scale_factor=2.5, prefix='walk'),
+            'shell': self.sprite_manager.get_animation_frames('koopa_green', scale_factor=2.5, prefix='shell')
         }
         
         Tetris.RED_TURTLE_FRAMES = {
-            'fly': self.sprite_manager.get_animation_frames('koopa_red', prefix='fly'),
-            'walk': self.sprite_manager.get_animation_frames('koopa_red', prefix='walk'),
-            'shell': self.sprite_manager.get_animation_frames('koopa_red', prefix='shell')
+            'fly': self.sprite_manager.get_animation_frames('koopa_red', scale_factor=2.5, prefix='fly'),
+            'walk': self.sprite_manager.get_animation_frames('koopa_red', scale_factor=2.5, prefix='walk'),
+            'shell': self.sprite_manager.get_animation_frames('koopa_red', scale_factor=2.5, prefix='shell')
         }
         
-        Tetris.SPINY_FRAMES = self.sprite_manager.get_animation_frames('spiny')
+        Tetris.SPINY_FRAMES = self.sprite_manager.get_animation_frames('spiny', scale_factor=2.5)
         Tetris.MUSHROOM_FRAMES = self.sprite_manager.get_animation_frames('mushroom', prefix='walk')
         
         # Tint Golden (Based on Walk frames)
@@ -2287,13 +2321,29 @@ class Tetris:
             self.current_piece.y = ghost_y 
 
             # Draw Active Piece
+            t_data = TETROMINO_DATA.get(self.current_piece.name, {})
+            active_img = None
+            if 'sprite' in t_data:
+                cat = t_data['category']
+                name = t_data['sprite']
+                
+                # Check for animated type
+                if cat in ['koopa_green', 'koopa_red', 'spiny']:
+                    frames = self.sprite_manager.get_animation_frames(cat, prefix='walk', scale_factor=2.0)
+                    if frames:
+                        idx = int(self.total_time * 6) % len(frames)
+                        active_img = frames[idx]
+                else:
+                    active_img = self.sprite_manager.get_sprite(cat, name, scale_factor=2.0)
+
             for bx, by in self.current_piece.blocks:
                 px = PLAYFIELD_X + (self.current_piece.x + bx) * BLOCK_SIZE
                 py = PLAYFIELD_Y + (self.current_piece.y + by) * BLOCK_SIZE
                 
-                # Use block_base.png logic later, for now simple rects matching Block class style
-                # Or use sprite manager if mapped? No simple color.
-                draw_3d_block(self.game_surface, self.current_piece.color, px, py, BLOCK_SIZE)
+                if active_img:
+                    self.game_surface.blit(active_img, (px, py))
+                else:
+                    draw_3d_block(self.game_surface, self.current_piece.color, px, py, BLOCK_SIZE)
 
             # Draw Turtles & Magic Mushrooms
             for t in self.turtles:
@@ -2358,8 +2408,10 @@ class Tetris:
                     spacing_y = 40
                     
                     # Panel Background
-                    panel_rect = pygame.Rect(hud_x - 20, 50, 300, 600)
-                    # pygame.draw.rect(self.game_surface, (0, 0, 0, 100), panel_rect) # Semi-transparent bg?
+                    panel_rect = pygame.Rect(hud_x - 20, 50, 220, 600)
+                    panel_surf = pygame.Surface((panel_rect.width, panel_rect.height), pygame.SRCALPHA)
+                    panel_surf.fill((0, 0, 0, 150)) # Dark transparent background
+                    self.game_surface.blit(panel_surf, panel_rect)
                     
                     self.game_surface.blit(self.font_small.render("MARIO", True, (200,200,200)), (hud_x, hud_y))
                     self.game_surface.blit(self.font_small.render(f"{int(self.score):06d}", True, C_WHITE), (hud_x, hud_y + 25))
@@ -2389,7 +2441,7 @@ class Tetris:
                     
                     hud_y += 40
                     if Tetris.TURTLE_FRAMES and 'walk' in Tetris.TURTLE_FRAMES:
-                         self.game_surface.blit(pygame.transform.scale(Tetris.TURTLE_FRAMES['walk'][0], (20, 20)), (hud_x + 100, hud_y))
+                         self.game_surface.blit(pygame.transform.scale(Tetris.TURTLE_FRAMES['walk'][0], (40, 40)), (hud_x + 80, hud_y - 10))
                          self.game_surface.blit(self.font_small.render(f"x {self.turtles_stomped}", True, C_WHITE), (hud_x + 130, hud_y + 5))
                          
                     # --- INPUT VISUALIZER ---
@@ -2583,12 +2635,15 @@ class Tetris:
         # Don't draw VFD/rack components on intro - they create visual artifacts
         # (Removed VFD sprite, volume knob overlay)
         
-        title = self.font_big.render("MARIO TETRIS", True, C_NEON_PINK)
-        start = self.font_small.render("PRESS ENTER TO START", True, C_WHITE)
-        esc = self.font_small.render("PRESS ESC TO QUIT", True, C_WHITE)
+        title_shadow = self.font_big.render("MARIO TETRIS", True, (0, 0, 0))
         
         cx, cy = self.screen.get_rect().center
+        self.screen.blit(title_shadow, title_shadow.get_rect(center=(cx + 4, cy - 146)))
+        
+        title = self.font_big.render("MARIO TETRIS", True, C_NEON_PINK)
         self.screen.blit(title, title.get_rect(center=(cx, cy - 150)))
+        
+        esc = self.font_small.render("PRESS ESC TO QUIT", True, C_WHITE)
         
         if pygame.time.get_ticks() % 1000 < 500: # Blink
              pass  # Removed duplicate start text
