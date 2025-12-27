@@ -4,6 +4,7 @@ import random
 import sys
 import json
 import os
+import asyncio
 import math
 from settings import game_settings
 from asset_loader import init_asset_loader, AssetLoader
@@ -1462,10 +1463,10 @@ class SoundManager:
         # Gameplay playlist - All available tracks for variety!
         self.neon_playlist = [
             '01. The James Bond Theme.mp3',  # Start with James Bond!
-            '02. undergroundtheme.mp3',
             '2. Bring The Noise.mp3',
             'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308.mp3',
-            'music_dark_jazz.mp3'
+            'music_dark_jazz.mp3',
+            '02. undergroundtheme.mp3'  # Moved to end
         ]
         self.neon_track_index = 0
         
@@ -3211,10 +3212,7 @@ class Tetris:
             traceback.print_exc()
 
     def log_event(self, message):
-        try:
-            with open("game_log.txt", "a") as f:
-                f.write(f"[{pygame.time.get_ticks()}] {message}\n")
-        except: pass
+        print(f"[{pygame.time.get_ticks()}] {message}")
 
     def draw_world_clear(self):
         try:
@@ -3392,7 +3390,7 @@ class Tetris:
 
     # World Shift Mechanic REMOVED as per user preference.
 
-    def run(self):
+    async def run(self):
         self.running = True
         while self.running:
             dt = self.clock.tick(60) / 1000.0
@@ -3475,8 +3473,11 @@ class Tetris:
                         self.sound_manager.next_song()
                         ui_handled = True
                     elif hasattr(self, 'settings_btn_rect') and self.settings_btn_rect.collidepoint(event.pos):
-                        import subprocess
-                        subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                        if sys.platform != 'emscripten':
+                            import subprocess
+                            subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                        else:
+                            print("Asset Editor not available in web version")
                         ui_handled = True
                     elif hasattr(self, 'vol_rect') and self.vol_rect.collidepoint(event.pos):
                         vol = (event.pos[0] - self.vol_rect.left) / self.vol_rect.width
@@ -3487,8 +3488,11 @@ class Tetris:
                     if self.game_state == 'INTRO' and hasattr(self, 'intro_scene'):
                         action = self.intro_scene.handle_click(event.pos)
                         if action == 'settings':
-                            import subprocess
-                            subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                            if sys.platform != 'emscripten':
+                                import subprocess
+                                subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                            else:
+                                print("Asset Editor not available in web version")
                             ui_handled = True
                         if action == 'mute':
                             self.sound_manager.toggle_mute()
@@ -3535,13 +3539,21 @@ class Tetris:
                 import traceback
                 traceback.print_exc()
 
+            # Yield control to the browser
+            await asyncio.sleep(0)
+
 if __name__ == "__main__":
     try:
         game = Tetris()
-        game.run()
+        asyncio.run(game.run())
     except Exception as e:
         import traceback
-        with open("crash.txt", "w") as f:
-            f.write(traceback.format_exc())
-        print(e)
-        input("Press Enter to Exit") # Keep window open if user runs manually
+        # In browser, we can't write to crash.txt, so just print
+        if sys.platform == 'emscripten':
+             print(f"CRASH: {e}")
+             traceback.print_exc()
+        else:
+             with open("crash.txt", "w") as f:
+                 f.write(traceback.format_exc())
+             print(e)
+             input("Press Enter to Exit")
