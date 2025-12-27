@@ -1,7 +1,8 @@
 Traceback (most recent call last):
-  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3390, in <module>
-    game.run()
-  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3327, in run
-    self.slot_machine.handle_input(event)
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'SlotMachine' object has no attribute 'handle_input'
+  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3542, in <module>
+    game = Tetris()
+           ^^^^^^^^
+  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 1943, in __init__
+    self.touch_controls = TouchControls((WINDOW_WIDTH, WINDOW_HEIGHT))
+                          ^^^^^^^^^^^^^
+NameError: name 'TouchControls' is not defined

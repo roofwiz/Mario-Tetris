@@ -1451,34 +1451,29 @@ class SoundManager:
         self.manual_stop = False
         # Separate playlists for intro/lobby and gameplay
         self.intro_playlist = [
-            'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308.mp3',
             'music_dark_jazz.mp3',
-            'mario_heavy.mp3',
-            'lifelost.mp3'
+            'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308.mp3'
         ]
         self.intro_track_index = 0
         self.intro_track = self.intro_playlist[0]  # Start with first intro track
         self._current_track = ''
         self.muted = False 
         
-        # Gameplay playlist
+        # Gameplay playlist - All available tracks for variety!
         self.neon_playlist = [
             '01. The James Bond Theme.mp3',  # Start with James Bond!
             '02. undergroundtheme.mp3',
-            '05. Ten in 2010.mp3',
-            '09. Hear It (Instrumental).mp3',
-            '13- Gnarls Barkley - Gone Daddy Gone.mp3',
             '2. Bring The Noise.mp3',
-            'music.mp3',  # Moved to end
-            'music2.mp3'  # Moved to end
+            'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308.mp3',
+            'music_dark_jazz.mp3'
         ]
         self.neon_track_index = 0
         
-        # Slot Bonus Playlist
+        # Slot Bonus Playlist - High energy tracks
         self.slot_playlist = [
-            '13- Gnarls Barkley - Gone Daddy Gone.mp3',
             '2. Bring The Noise.mp3',
-            '05. Ten in 2010.mp3'
+            'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308.mp3',
+            '01. The James Bond Theme.mp3'
         ]
         self.slot_track_index = 0
         
@@ -1644,36 +1639,25 @@ class SoundManager:
                 print(f"Error loading intro music: {e}")
 
     def stop_music(self):
-        try: pygame.mixer.music.stop()
+        """Stop ALL music - both mixer.music and channels"""
+        try: 
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()  # Fully release the music
         except: pass
         if self.chan_neon: self.chan_neon.stop()
         if self.chan_shadow: self.chan_shadow.stop()
+        self._current_track = ''  # Clear current track
 
     def start_dual_mode(self):
-        """Start gameplay music (uses channels and playlist)"""
-        print("[SoundManager] Starting dual mode music...")
+        """Start gameplay music (uses standard music system, not channels)"""
+        print("[SoundManager] Starting gameplay music...")
         self.current_mode = 'gameplay'
-        self.stop_music()  # Stop intro music
+        self.stop_music()  # Ensure everything is stopped
         
-        # Load first track from gameplay playlist
+        # Use the standard play_track system for consistency
         self.neon_track_index = 0
         track_name = self.neon_playlist[self.neon_track_index]
-        p = self._get_path(track_name)
-        
-        if os.path.exists(p):
-            try:
-                self.music_neon = pygame.mixer.Sound(p)
-                if self.chan_neon:
-                    self.chan_neon.play(self.music_neon, loops=-1)
-                    print(f"✓ Playing gameplay track: {track_name}")
-                    self.update_volumes()
-            except Exception as e:
-                print(f"Error starting gameplay music: {e}")
-        
-        # Shadow channel remains silent for now (or load mario_heavy.mp3 if needed)
-        if self.music_shadow and self.chan_shadow:
-            self.chan_shadow.play(self.music_shadow, loops=-1)
-            self.update_volumes()
+        self.play_track(track_name)
 
     def next_song(self):
         """Cycle to next song in appropriate playlist"""
@@ -1685,17 +1669,9 @@ class SoundManager:
             # Cycle gameplay playlist
             self.neon_track_index = (self.neon_track_index + 1) % len(self.neon_playlist)
             track_name = self.neon_playlist[self.neon_track_index]
-            p = self._get_path(track_name)
-            if os.path.exists(p):
-                try:
-                    self.music_neon = pygame.mixer.Sound(p)
-                    if self.chan_neon:
-                        self.chan_neon.stop()
-                        self.chan_neon.play(self.music_neon, loops=-1)
-                        self.update_volumes()
-                        print(f"[Gameplay] Now playing: {track_name}")
-                except Exception as e:
-                    print(f"Error changing song: {e}")
+            self.stop_music()  # Clean stop before switching
+            self.play_track(track_name)
+            print(f"[Gameplay] Now playing: {track_name}")
 
     def set_target_world(self, world):
         self.target_world = world
@@ -1730,6 +1706,37 @@ class SoundManager:
     def set_volume(self, v):
         self.master_volume = max(0.0, min(1.0, v))
         self.update_volumes()
+    
+    def get_track_display_name(self):
+        """Returns a clean, short version of the current track name"""
+        track = self._current_track
+        if not track:
+            return "No Music"
+        
+        # Strip .mp3 extension
+        name = track.replace('.mp3', '')
+        
+        # Clean up specific tracks
+        name_map = {
+            '01. The James Bond Theme': 'James Bond',
+            '02. undergroundtheme': 'Underground',
+            '2. Bring The Noise': 'Bring The Noise',
+            'energic-funk-upbeat-vintage-and-confident-mood-loop-1-371308': 'Funky Loop',
+            'music_dark_jazz': 'Dark Jazz',
+            'lifelost': 'Life Lost'
+        }
+        
+        return name_map.get(name, name[:20])  # Fallback to first 20 chars
+    
+    def get_track_position(self):
+        """Returns current track number and total tracks"""
+        if self.current_mode == 'intro':
+            return (self.intro_track_index + 1, len(self.intro_playlist))
+        elif self.current_mode == 'gameplay':
+            return (self.neon_track_index + 1, len(self.neon_playlist))
+        elif self.current_mode == 'slots':
+            return (self.slot_track_index + 1, len(self.slot_playlist))
+        return (0, 0)
 
     @property
     def volume(self):
@@ -1742,116 +1749,111 @@ class SoundManager:
 # IntroScene moved to src.scene_intro
 from src.scene_intro import IntroScene
 
-class TouchControls:
+class GestureControls:
+    """Modern gesture-based controls for mobile Tetris"""
     def __init__(self, screen_dimensions):
-        self.collapsed = False
-        self.height = 150 # Height of the controller panel
         self.screen_w, self.screen_h = screen_dimensions
+        self.touch_start = None
+        self.touch_start_time = 0
+        self.swipe_threshold = 50  # Minimum distance for swipe
+        self.tap_time_threshold = 0.3  # Maximum time for tap
+        self.last_action = None
+        self.last_action_time = 0
+        self.action_cooldown = 0.15  # Prevent spam
         
-        # Recalculate layout
-        self.update_layout(self.screen_w, self.screen_h)
-
-    def update_layout(self, w, h):
-        self.screen_w, self.screen_h = w, h
-        panel_y = h - self.height
-        
-        # Center d-pad on RIGHT (Swapped)
-        cy = panel_y + self.height // 2
-        rx = w - 210 # Base x for right side cluster
-        
-        self.btn_left = pygame.Rect(rx, cy - 30, 60, 60)
-        self.btn_down = pygame.Rect(rx + 70, cy, 60, 60) # Offset down
-        self.btn_right = pygame.Rect(rx + 140, cy - 30, 60, 60)
-        
-        # Actions on LEFT (Swapped)
-        lx = 60 # Base x for left side
-        
-        self.btn_b = pygame.Rect(lx, cy, 70, 70) # B is outer/lower usually
-        self.btn_a = pygame.Rect(lx + 90, cy - 30, 70, 70) # A is inner/higher
-        
-        # Toggle Button
-        if h <= WINDOW_HEIGHT: # Collapsed
-            # Place at very bottom of screen so it doesn't block playfield
-            self.btn_toggle = pygame.Rect(w // 2 - 40, h - 30, 80, 25)
-        else: # Expanded (Panel is shown)
-            # Place at the top edge of the panel
-            self.btn_toggle = pygame.Rect(w // 2 - 40, panel_y - 25, 80, 25)
-
-        # Colors
-        c_face = (200, 200, 200, 255) # Light Grey D-Pad
-        c_a = (220, 40, 40, 255) # Red A
-        c_b = (220, 200, 40, 255) # Yellow B
-
-        self.buttons = [
-            {'rect': self.btn_left, 'color': c_face, 'action': 'LEFT', 'label': '<', 'shape': 'rect'},
-            {'rect': self.btn_right, 'color': c_face, 'action': 'RIGHT', 'label': '>', 'shape': 'rect'},
-            {'rect': self.btn_down, 'color': c_face, 'action': 'DOWN', 'label': 'v', 'shape': 'rect'},
-            {'rect': self.btn_a, 'color': c_a, 'action': 'ROTATE', 'label': 'A', 'shape': 'circle'},
-            {'rect': self.btn_b, 'color': c_b, 'action': 'HARD_DROP', 'label': 'B', 'shape': 'circle'}
-        ]
-
-    def draw(self, surface, font):
-        if self.collapsed:
-             # Just draw toggle tab
-             pygame.draw.rect(surface, (100, 100, 100), self.btn_toggle, border_radius=5)
-             lbl = font.render("^", True, (255,255,255))
-             surface.blit(lbl, lbl.get_rect(center=self.btn_toggle.center))
-             return
-
-        # Draw Panel BG (Metallic/Plastic Look)
-        panel_rect = pygame.Rect(0, self.screen_h - self.height, self.screen_w, self.height)
-        pygame.draw.rect(surface, (30, 30, 35), panel_rect)
-        pygame.draw.line(surface, (150, 150, 150), (0, panel_rect.top), (self.screen_w, panel_rect.top), 2)
-        
-        # Toggle Tab
-        pygame.draw.rect(surface, (100, 100, 100), self.btn_toggle, border_radius=5)
-        lbl = font.render("v", True, (255,255,255))
-        surface.blit(lbl, lbl.get_rect(center=self.btn_toggle.center))
-
-        for b in self.buttons:
-            r = b['rect']
-            c = b['color']
-            
-            # Simple 3D Effect: Darker shadow bottom-right, Lighter highlight top-left
-            shadow_off = 4
-            
-            if b.get('shape') == 'circle':
-                 # Shadow
-                 pygame.draw.circle(surface, (20, 20, 20), (r.centerx + shadow_off, r.centery + shadow_off), r.w//2)
-                 # Main Body
-                 pygame.draw.circle(surface, c, r.center, r.w//2)
-                 # Highlight (Bevel)
-                 pygame.draw.circle(surface, (255, 255, 255), (r.centerx - 2, r.centery - 2), r.w//2, 2)
-                 
-            else: # Rect (D-Padish)
-                 # Shadow
-                 s_rect = r.move(shadow_off, shadow_off)
-                 pygame.draw.rect(surface, (20, 20, 20), s_rect, border_radius=5)
-                 # Main Body
-                 pygame.draw.rect(surface, c, r, border_radius=5)
-                 # Highlight
-                 pygame.draw.rect(surface, (255, 255, 255), r, 2, border_radius=5)
-
-            # Label (with slight shadow)
-            txt_s = font.render(b['label'], True, (0, 0, 0))
-            surface.blit(txt_s, txt_s.get_rect(center=(r.centerx+1, r.centery+1)))
-            
-            txt = font.render(b['label'], True, (255, 255, 255))
-            surface.blit(txt, txt.get_rect(center=b['rect'].center))
-
-    def handle_input(self, pos):
-        # Toggle Check
-        if self.btn_toggle.collidepoint(pos):
-             return 'TOGGLE_CONTROLS'
-             
-        if self.collapsed: return None
-
-        for b in self.buttons:
-            dx = pos[0] - b['rect'].centerx
-            dy = pos[1] - b['rect'].centery
-            if math.sqrt(dx*dx + dy*dy) < b['rect'].w//2:
-                return b['action']
+    def handle_touch_down(self, pos):
+        """Called when touch/click starts"""
+        self.touch_start = pos
+        self.touch_start_time = pygame.time.get_ticks() / 1000.0
         return None
+    
+    def handle_touch_up(self, pos):
+        """Called when touch/click ends - detects gesture"""
+        if not self.touch_start:
+            return None
+            
+        current_time = pygame.time.get_ticks() / 1000.0
+        time_elapsed = current_time - self.touch_start_time
+        
+        # Calculate swipe distance
+        dx = pos[0] - self.touch_start[0]
+        dy = pos[1] - self.touch_start[1]
+        distance = (dx**2 + dy**2) ** 0.5
+        
+        action = None
+        
+        # Check cooldown
+        if current_time - self.last_action_time < self.action_cooldown:
+            self.touch_start = None
+            return None
+        
+        # TAP - Quick touch with minimal movement
+        if time_elapsed < self.tap_time_threshold and distance < 30:
+            action = 'ROTATE'
+        
+        # SWIPE - Longer distance movement
+        elif distance >= self.swipe_threshold:
+            # Determine primary direction
+            if abs(dx) > abs(dy):
+                # Horizontal swipe
+                if dx > 0:
+                    action = 'RIGHT'
+                else:
+                    action = 'LEFT'
+            else:
+                # Vertical swipe
+                if dy > 0:
+                    action = 'SOFT_DROP'
+                else:
+                    action = 'HARD_DROP'
+        
+        # Reset
+        self.touch_start = None
+        
+        if action:
+            self.last_action = action
+            self.last_action_time = current_time
+            
+        return action
+    
+    def draw(self, surface, font):
+        """Draw gesture hints (optional, minimal)"""
+        # Show subtle hint overlay only if needed
+        # For now, let's keep it clean with no UI
+        pass
+    
+    def draw_tutorial(self, surface, font):
+        """Show tutorial overlay for first-time users"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+        
+        # Title
+        title_font = pygame.font.SysFont('Arial', 32, bold=True)
+        title = title_font.render("TOUCH CONTROLS", True, (255, 255, 255))
+        surface.blit(title, title.get_rect(center=(self.screen_w//2, 100)))
+        
+        # Instructions
+        instructions = [
+            ("SWIPE LEFT/RIGHT", "Move piece"),
+            ("SWIPE DOWN", "Soft drop"),
+            ("SWIPE UP", "Hard drop"),
+            ("TAP", "Rotate piece")
+        ]
+        
+        y = 200
+        for gesture, action in instructions:
+            gesture_text = font.render(gesture, True, (100, 200, 255))
+            action_text = font.render(f"→ {action}", True, (200, 200, 200))
+            
+            surface.blit(gesture_text, (self.screen_w//2 - 150, y))
+            surface.blit(action_text, (self.screen_w//2 + 20, y))
+            y += 50
+        
+        # Hint
+        hint = font.render("Touch anywhere to dismiss", True, (150, 150, 150))
+        surface.blit(hint, hint.get_rect(center=(self.screen_w//2, self.screen_h - 100)))
 
 
 class Tetris:
@@ -1937,9 +1939,9 @@ class Tetris:
         self.bonus_game = BonusGame(self) # Initialize Bonus Game
         self.intro_scene = IntroScene(self.sprite_manager)
         
-        # Mobile Controls
-        self.touch_controls = TouchControls((WINDOW_WIDTH, WINDOW_HEIGHT))
-        self.show_touch_controls = True # Default On for testing
+        # Modern Gesture Controls
+        self.gesture_controls = GestureControls((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.show_gesture_tutorial = False  # Set to True to show tutorial on first launch
         
         # Load Font
         self.font_path = game_settings.get_asset_path('fonts', 'main')
@@ -1979,9 +1981,9 @@ class Tetris:
 
         self.reset_game()
         self.reset_game()
-        self.game_state = 'INTRO'
+        self.game_state = 'PLAYING'  # Start playing immediately!
         if hasattr(self, 'sound_manager'):
-            self.sound_manager.play_music_intro()
+            self.sound_manager.start_dual_mode()  # Start gameplay music
             
         # UI Cache
         self.ui_bg = None
@@ -2485,21 +2487,8 @@ class Tetris:
             keys = pygame.key.get_pressed()
             self.key_down_held = keys[pygame.K_DOWN]
 
-            # Touch/Mouse Input Handling
-            if self.show_touch_controls:
-                 if pygame.mouse.get_pressed()[0]:
-                     action = self.touch_controls.handle_input(pygame.mouse.get_pos())
-                     if action == 'TOGGLE_CONTROLS':
-                         self.touch_controls.collapsed = not self.touch_controls.collapsed
-                         pygame.time.wait(100)
-                     elif action:
-                         if action == 'LEFT': self.action_move(-1)
-                         elif action == 'RIGHT': self.action_move(1)
-                         elif action == 'DOWN': self.key_down_held = True
-                         elif action == 'ROTATE': self.action_rotate()
-                         elif action == 'HARD_DROP': self.action_hard_drop()
-                 else:
-                     if not keys[pygame.K_DOWN]: self.key_down_held = False
+
+            # Gesture controls handled via events (MOUSEBUTTONDOWN/UP), not polling
 
             # DAS Logic
             if self.das_direction != 0:
@@ -3107,6 +3096,30 @@ class Tetris:
                     # Spacebar (Wide)
                     draw_key("SPACE (SHIFT)", pygame.K_SPACE, viz_x, viz_y + 80, kw=150)
                     
+                    # === MUSIC DISPLAY (Added Below Controls) ===
+                    hud_y += 200
+                    music_box_y = hud_y
+                    
+                    # Music Box Background
+                    music_rect = pygame.Rect(hud_x - 10, music_box_y, 180, 85)
+                    pygame.draw.rect(self.game_surface, (10, 10, 30), music_rect, border_radius=8)
+                    pygame.draw.rect(self.game_surface, (100, 200, 255), music_rect, 2, border_radius=8)
+                    
+                    # Music Icon/Label
+                    self.game_surface.blit(self.font_small.render("♫ NOW PLAYING", True, (150, 200, 255)), (hud_x, music_box_y + 8))
+                    
+                    # Track Name
+                    track_name = self.sound_manager.get_track_display_name()
+                    self.game_surface.blit(self.font_small.render(track_name, True, C_WHITE), (hud_x, music_box_y + 30))
+                    
+                    # Track Position
+                    track_num, track_total = self.sound_manager.get_track_position()
+                    position_text = f"Track {track_num}/{track_total}"
+                    self.game_surface.blit(self.font_small.render(position_text, True, (200, 200, 200)), (hud_x, music_box_y + 52))
+                    
+                    # Next Track hint
+                    self.game_surface.blit(self.font_small.render("Press N for next", True, (120, 120, 140)), (hud_x, music_box_y + 70))
+                    
                 # OLD HUD CODE REMOVED
 
     
@@ -3133,11 +3146,8 @@ class Tetris:
                 
                 # HUD END
 
-            target_h = WINDOW_HEIGHT
-            if self.show_touch_controls and not self.touch_controls.collapsed: target_h += self.touch_controls.height
-            if self.screen.get_height() != target_h:
-                self.screen = pygame.display.set_mode((WINDOW_WIDTH, target_h), pygame.RESIZABLE)
-                self.touch_controls.update_layout(WINDOW_WIDTH, target_h)
+            # Screen size remains constant with gesture controls
+            # (No need for dynamic height adjustment)
 
             # Responsive Layout Logic
             is_vertical = WINDOW_HEIGHT > WINDOW_WIDTH * 1.2
@@ -3188,7 +3198,9 @@ class Tetris:
             if self.scanline_overlay:
                  self.screen.blit(self.scanline_overlay, (0,0))
                  
-            if self.show_touch_controls: self.touch_controls.draw(self.screen, self.font_small)
+            # Draw gesture tutorial if enabled
+            if getattr(self, 'show_gesture_tutorial', False):
+                self.gesture_controls.draw_tutorial(self.screen, self.font_small)
             
             # Draw Bot Debug
             if hasattr(self, 'ai_bot'): self.ai_bot.draw_debug(self.screen)
@@ -3402,8 +3414,7 @@ class Tetris:
                     if event.key == pygame.K_ESCAPE:
                         if self.game_state == 'PLAYING': 
                              self.sound_manager.stop_music()
-                             self.game_state = 'INTRO'
-                             self.sound_manager.play_music_intro()  # Resume intro music
+                             self.game_state = 'GAMEOVER'  # Go to game over instead
                         else: 
                              self.running = False
                              pygame.quit()
@@ -3444,7 +3455,9 @@ class Tetris:
                     
                     # Global Keys
                     if event.key == pygame.K_f: self.toggle_fullscreen()
-                    if event.key == pygame.K_m: self.show_touch_controls = not self.show_touch_controls
+                    if event.key == pygame.K_n:  # Next Track
+                        self.sound_manager.next_song()
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"♫ {self.sound_manager.get_track_display_name()}", C_NEON_BLUE))
                 
                 # Mouse Inputs
             if self.game_state == 'SLOT_MACHINE':
@@ -3452,48 +3465,62 @@ class Tetris:
                 
             if event.type == pygame.MOUSEBUTTONDOWN and self.game_state != 'SLOT_MACHINE':
                 if event.button == 1:
-                    # Shared UI Handlers
-                        if hasattr(self, 'mute_btn_rect') and self.mute_btn_rect.collidepoint(event.pos):
-                             self.sound_manager.toggle_mute()
-                        elif hasattr(self, 'song_btn_rect') and self.song_btn_rect.collidepoint(event.pos):
-                             self.sound_manager.next_song()
-                        elif hasattr(self, 'settings_btn_rect') and self.settings_btn_rect.collidepoint(event.pos):
-                             import subprocess
-                             subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
-                        elif hasattr(self, 'vol_rect') and self.vol_rect.collidepoint(event.pos):
-                             vol = (event.pos[0] - self.vol_rect.left) / self.vol_rect.width
-                             self.sound_manager.set_volume(vol)
-                             
-                        # Settings Button (Intro)
-                        if self.game_state == 'INTRO' and hasattr(self, 'intro_scene'):
-                             action = self.intro_scene.handle_click(event.pos)
-                             if action == 'settings':
-                                 import subprocess
-                                 subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
-                             if action == 'mute': # Local handle if scene has it
-                                 self.sound_manager.toggle_mute()
-                            
-                        # Check Tetris Button (Main Game)
-                        if self.game_state == 'INTRO' and hasattr(self, 'btn_tetris_rect'):
-                            if self.btn_tetris_rect.collidepoint(event.pos):
-                                 print("Starting Tetris Mode...")
-                                 self.reset_game()
-                                 self.game_state = 'PLAYING'
-                                 self.sound_manager.start_dual_mode()
-                            
-                        # Touch Controls
-                        if self.show_touch_controls:
-                            action = self.touch_controls.handle_input(event.pos)
-                            if action == 'LEFT': self.action_move(-1)
-                            if action == 'RIGHT': self.action_move(1)
-                            if action == 'DOWN': self.key_down_held = True
-                            if action == 'ROTATE': self.action_rotate()
-                            if action == 'HARD_DROP': self.action_hard_drop()
+                    ui_handled = False
+                    
+                    # Shared UI Handlers (check these FIRST)
+                    if hasattr(self, 'mute_btn_rect') and self.mute_btn_rect.collidepoint(event.pos):
+                        self.sound_manager.toggle_mute()
+                        ui_handled = True
+                    elif hasattr(self, 'song_btn_rect') and self.song_btn_rect.collidepoint(event.pos):
+                        self.sound_manager.next_song()
+                        ui_handled = True
+                    elif hasattr(self, 'settings_btn_rect') and self.settings_btn_rect.collidepoint(event.pos):
+                        import subprocess
+                        subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                        ui_handled = True
+                    elif hasattr(self, 'vol_rect') and self.vol_rect.collidepoint(event.pos):
+                        vol = (event.pos[0] - self.vol_rect.left) / self.vol_rect.width
+                        self.sound_manager.set_volume(vol)
+                        ui_handled = True
+                    
+                    # Settings Button (Intro)
+                    if self.game_state == 'INTRO' and hasattr(self, 'intro_scene'):
+                        action = self.intro_scene.handle_click(event.pos)
+                        if action == 'settings':
+                            import subprocess
+                            subprocess.Popen([sys.executable, 'asset_editor.py'], cwd=os.path.dirname(os.path.abspath(__file__)))
+                            ui_handled = True
+                        if action == 'mute':
+                            self.sound_manager.toggle_mute()
+                            ui_handled = True
+                    
+                    # Check Tetris Button (Main Game)
+                    if self.game_state == 'INTRO' and hasattr(self, 'btn_tetris_rect'):
+                        if self.btn_tetris_rect.collidepoint(event.pos):
+                            print("Starting Tetris Mode...")
+                            self.reset_game()
+                            self.game_state = 'PLAYING'
+                            self.sound_manager.start_dual_mode()
+                            ui_handled = True
+                    
+                    # Gesture tracking (ONLY if UI wasn't clicked)
+                    if self.game_state == 'PLAYING' and not ui_handled:
+                        self.gesture_controls.handle_touch_down(event.pos)
                 
                 if event.type == pygame.MOUSEBUTTONUP:
                     self.key_down_held = False
                     if self.game_state == 'INTRO' and hasattr(self, 'intro_scene'):
                          self.intro_scene.handle_mouse_up(event.pos)
+                    
+                    # Handle gesture completion
+                    if self.game_state == 'PLAYING':
+                        action = self.gesture_controls.handle_touch_up(event.pos)
+                        if action:
+                            if action == 'LEFT': self.action_move(-1)
+                            elif action == 'RIGHT': self.action_move(1)
+                            elif action == 'SOFT_DROP': self.key_down_held = True  # Activate soft drop
+                            elif action == 'HARD_DROP': self.action_hard_drop()
+                            elif action == 'ROTATE': self.action_rotate()
                     
             
             try:
