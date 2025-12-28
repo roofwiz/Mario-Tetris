@@ -1677,31 +1677,9 @@ class SoundManager:
             # Dual Music System
             # self.chan_neon/shadow created above
             
-            # Load Tracks for Dual Mode
-            try:
-                # Tracks for the actual gameplay
-                tracks = {'neon': 'music.mp3', 'shadow': 'mario_heavy.mp3'}
-                
-                def get_music_path(f):
-                    p1 = os.path.join('assets', 'sounds', f)
-                    p2 = os.path.join('sounds', f)
-                    return p1 if os.path.exists(p1) else p2
-                
-                p_n = get_music_path(tracks['neon'])
-                p_s = get_music_path(tracks['shadow'])
-                
-                if os.path.exists(p_n):
-                    self.music_neon = pygame.mixer.Sound(p_n)
-                    print(f"✓ Loaded NEON music: {p_n}")
-                else:
-                    print(f"✗ NEON music not found: {p_n}")
-                    
-                if os.path.exists(p_s):
-                    self.music_shadow = pygame.mixer.Sound(p_s)
-                    print(f"✓ Loaded SHADOW music: {p_s}")
-                else:
-                    print(f"✗ SHADOW music not found: {p_s}")
-            except Exception as e: print(f"Music Load Error: {e}")
+            # Dual Mode Tracks Removed (Using Playlist System)
+            self.music_neon = None
+            self.music_shadow = None
             
             # Intro Track already set at top
             pass
