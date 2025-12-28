@@ -850,22 +850,25 @@ class Cloud:
             surface.blit(self.image, (self.x, self.y))
 
 class PopupText:
-    def __init__(self, x, y, text, color=(255, 255, 255)):
+    def __init__(self, x, y, text, color=(255, 255, 255), size='small'):
         self.x = x
         self.y = y
         self.text = text
         self.color = color
+        self.size = size # 'small', 'med', 'big'
         self.life = 1.0 # Seconds
-        self.dy = -30
+        self.dy = -40 if size == 'big' else -30
         
     def update(self, dt):
         self.life -= dt
         self.y += self.dy * dt
         
-    def draw(self, surface, font):
+    def draw(self, surface, font_map):
         if self.life > 0:
+            font = font_map.get(self.size, font_map['small'])
             surf = font.render(self.text, True, self.color)
-            surface.blit(surf, (self.x, self.y))
+            rect = surf.get_rect(center=(self.x, self.y))
+            surface.blit(surf, rect)
 
 class SparkleEffect:
     def __init__(self, x, y, sprite_manager):
@@ -1505,9 +1508,12 @@ class Grid:
                 lines_cleared += 1
                 completed_line_indices.append(y)  # Save line index for animation
                 # Check for special blocks in this line
+                has_garbage = False
                 for block in cols:
-                    if block.type == 'coin': special_events.append('COIN')
-                    if block.type == 'question': special_events.append('ITEM')
+                    if block and getattr(block, 'type', '') == 'brick': has_garbage = True
+                    if block and block.type == 'coin': special_events.append('COIN')
+                    if block and block.type == 'question': special_events.append('ITEM')
+                if has_garbage: special_events.append('BRICK_CLEAR')
         
         while len(rows_to_keep) < GRID_HEIGHT:
             rows_to_keep.insert(0, [None] * GRID_WIDTH)
@@ -1613,7 +1619,7 @@ class SoundManager:
         self.intro_track_index = 0
         self.intro_track = None
         self._current_track = ''
-        self.muted = True # Start SILENT (v11) 
+        self.muted = False  # Start with music ON 
         
         # Gameplay playlist - All available tracks for variety!
         # Gameplay playlist - Priotize new songs!
@@ -2210,6 +2216,9 @@ class Tetris:
         self.frame_stomps = 0  # Track stomps in a single action for slot trigger
         self.b2b_chain = 0
         
+        self.line_flash_timer = 0
+        self.flash_lines = []
+        
         # Level Progress
         self.lines_required = 10
         self.boss_hp = 0
@@ -2278,7 +2287,7 @@ class Tetris:
         if self.is_boss_level:
             self.max_boss_hp = 10 + self.world * 5
             self.boss_hp = self.max_boss_hp
-            self.boss_garbage_timer = 5.0
+            self.boss_garbage_timer = 12.0  # Slower start - more time to prepare
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS LEVEL!", C_RED))
         
             # self.sound_manager.play('music') # Removed legacy call
@@ -2340,10 +2349,12 @@ class Tetris:
             self.p_wing_timer = 15.0
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "P-WING!", C_GOLD))
 
-    def handle_line_clear(self, cleared):
+    def handle_line_clear(self, cleared, events=[], line_indices=[]):
         self.lines_this_level += cleared
         self.lines_cleared_total += cleared
         self.lines_since_mushroom += cleared
+        self.line_flash_timer = 0.3
+        self.flash_lines = line_indices
         
         # Scoring 2.0 (Classic Multipliers)
         self.level = (self.world - 1) * 4 + self.level_in_world
@@ -2392,6 +2403,11 @@ class Tetris:
         if self.is_boss_level:
             dmg = 1
             if cleared == 4: dmg = 5
+            # EXTRA DAMAGE FOR GARBAGE
+            if 'BRICK_CLEAR' in events: 
+                dmg += 2
+                self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 100, "BRICK SMASH!", C_ORANGE, size='big'))
+                self.sound_manager.play('damage')
             self.boss_hp -= dmg
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 40, f"HIT! -{dmg} HP", C_RED))
             if self.boss_hp <= 0:
@@ -2467,13 +2483,15 @@ class Tetris:
     # self.reset_level() -> Moved to handle_slot_finish
 
     def trigger_boss_garbage(self):
-        # Bowser attacks! Push 1-2 messy lines from bottom
-        rows = random.randint(1, 2)
+        # Bowser attacks! Push garbage line from bottom
+        rows = 1  # EASIER: Only 1 row per attack
         for _ in range(rows):
             new_row = [Block((128, 128, 128), 'brick') for _ in range(GRID_WIDTH)]
-            # Leave exactly one gap so it's not impossible
-            gap = random.randint(0, GRID_WIDTH - 1)
-            new_row[gap] = None
+            # Leave 2 gaps so it's easier to clear
+            gap1 = random.randint(0, GRID_WIDTH - 1)
+            gap2 = (gap1 + random.randint(2, 4)) % GRID_WIDTH  # Second gap
+            new_row[gap1] = None
+            new_row[gap2] = None
             self.grid.grid.pop(0)
             self.grid.grid.append(new_row)
         self.popups.append(PopupText(WINDOW_WIDTH//2, PLAYFIELD_Y, "BOWSER ATTACK!", C_ORANGE))
@@ -2535,16 +2553,19 @@ class Tetris:
         self.offset_y = (sh - (WINDOW_HEIGHT * self.scale)) // 2
 
     def trigger_slot_machine(self, spins=1, reason='COMBO'):
-        self.slot_trigger_reason = reason
-        self.game_state = 'SLOT_MACHINE'
-        try:
-            self.slot_machine.trigger(spins=spins)
-            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, "BONUS CHANCE!", C_GREEN))
-            # Switch to Slot Music!
-            self.sound_manager.play_music_slots()
-        except Exception as e:
-            print(f"Slot error: {e}")
-            self.game_state = 'PLAYING'
+        # SLOTS DISABLED - Award instant bonus instead!
+        # Bonus = stomps × (lines cleared / 5) or minimum 10 coins per stomp
+        bonus_multiplier = max(1, self.lines_this_level // 5)
+        bonus_coins = self.frame_stomps * 10 * bonus_multiplier
+        
+        if bonus_coins > 0:
+            self.coins += bonus_coins
+            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, f"+{bonus_coins} COINS!", (255, 215, 0)))
+            self.sound_manager.play('coin')
+            print(f"[BONUS] Awarded {bonus_coins} coins (stomps: {self.frame_stomps}, multiplier: {bonus_multiplier})")
+        
+        # Don't change game state - stay in PLAYING
+        return
 
     def handle_slot_finish(self, coins):
         # Convert coins to score (10x multiplier)
@@ -2653,17 +2674,31 @@ class Tetris:
              self.transition_timer += dt
              if self.transition_timer >= 5.0: # 5 Seconds Results
                  self.transition_timer = 0
-                 # Trigger slot machine with 1 spin per enemy stomped
-                 earned_spins = getattr(self, 'turtles_stomped', 0)
-                 print(f"[DEBUG] WORLD_CLEAR done. Enemies stomped: {earned_spins}")
-                 if earned_spins > 0:
-                     self.trigger_slot_machine(spins=earned_spins, reason='LEVEL_CLEAR')
-                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, f"BONUS: {earned_spins} FREE SPINS!", (255, 215, 0)))
-                     self.turtles_stomped = 0  # Reset for next level
-                 else:
-                     # No enemies stomped, just advance
-                     self.game_state = 'PLAYING'
-                     self.reset_level()
+                 
+                 # END-OF-LEVEL BONUS: Lines × Stomps = Bonus Coins!
+                 lines = getattr(self, 'lines_this_level', 0)
+                 stomps = getattr(self, 'turtles_stomped', 0)
+                 bonus = lines * stomps
+                 
+                 print(f"[BONUS] Level Complete! Lines: {lines} × Stomps: {stomps} = {bonus} coins")
+                 
+                 if bonus > 0:
+                     self.coins += bonus
+                     self.score += bonus * 10  # Also add to score
+                     # Show bonus breakdown - BIG TEXT
+                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 120, f"LINES: {lines}", (100, 255, 100), size='med'))
+                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 60, f"STOMPS: {stomps}", (255, 100, 100), size='med'))
+                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"─────────", C_WHITE, size='med'))
+                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, f"BONUS: {bonus} COINS!", (255, 215, 0), size='big'))
+                     self.sound_manager.play('coin')
+                 
+                 # Reset counters for next level
+                 self.turtles_stomped = 0
+                 self.lines_this_level = 0
+                 
+                 # Advance to next level
+                 self.game_state = 'PLAYING'
+                 self.reset_level()
              return
 
             self.total_time += dt
@@ -2758,7 +2793,7 @@ class Tetris:
                 self.boss_garbage_timer -= dt
                 if self.boss_garbage_timer <= 0:
                     self.trigger_boss_garbage()
-                    self.boss_garbage_timer = 8.0 - min(4.0, self.world * 0.5)
+                    self.boss_garbage_timer = 12.0 - min(4.0, self.world * 0.5)  # EASIER: More time
 
             # Antigravity Logic
             if self.antigravity_active:
@@ -2819,8 +2854,8 @@ class Tetris:
                         self.grid.lock_piece(self.current_piece)
                         self.lock_timer = 0
                         self.lock_move_count = 0
-                        cleared, events = self.grid.clear_lines()
-                        if cleared > 0: self.handle_line_clear(cleared)
+                        cleared, events, line_indices = self.grid.clear_lines()
+                        if cleared > 0: self.handle_line_clear(cleared, events, line_indices)
                         self.current_piece = self.next_piece
                         self.next_piece = self.spawner.get_next_piece()
                         if self.grid.check_collision(self.current_piece):
@@ -3067,6 +3102,17 @@ class Tetris:
             
             self.grid.draw(self.game_surface, self.total_time)
             
+            # Line Flash Highlight
+            if getattr(self, 'line_flash_timer', 0) > 0:
+                self.line_flash_timer -= 0.016 # Assumed 60fps dt
+                alpha = int(255 * (self.line_flash_timer / 0.3))
+                for ly in getattr(self, 'flash_lines', []):
+                    flash_rect = pygame.Rect(PLAYFIELD_X, PLAYFIELD_Y + ly * BLOCK_SIZE, PLAYFIELD_WIDTH, BLOCK_SIZE)
+                    s = pygame.Surface((PLAYFIELD_WIDTH, BLOCK_SIZE))
+                    s.set_alpha(alpha)
+                    s.fill((255, 255, 255))
+                    self.game_surface.blit(s, flash_rect)
+            
             # Star Power Effect
             if self.star_active:
                  s = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -3088,7 +3134,7 @@ class Tetris:
                 self.game_surface.blit(s, (0, 0))
             
             for p in self.popups:
-                p.draw(self.game_surface, self.font_small)
+                p.draw(self.game_surface, {'small': self.font_small, 'med': self.font_med, 'big': self.font_big})
                 
             if getattr(self, 'show_level_intro', False):
              self.level_intro_timer -= 0.016
@@ -3395,7 +3441,7 @@ class Tetris:
                 
                 # Draw Popups (Centered or localized)
                 for p in self.popups:
-                    p.draw(self.game_surface, self.font_small)
+                    p.draw(self.game_surface, {'small': self.font_small, 'med': self.font_med, 'big': self.font_big})
                 
                 # HUD END
 
@@ -3628,8 +3674,8 @@ class Tetris:
         self.grid.lock_piece(self.current_piece)
         
         # Line Clearing
-        cleared, events = self.grid.clear_lines()
-        if cleared > 0: self.handle_line_clear(cleared)
+        cleared, events, line_indices = self.grid.clear_lines()
+        if cleared > 0: self.handle_line_clear(cleared, events, line_indices)
         
         # Next Piece
         self.current_piece = self.next_piece
