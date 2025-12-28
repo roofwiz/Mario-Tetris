@@ -2151,6 +2151,11 @@ class Tetris:
         self.scale = 1.0
         self.offset_x = 0
         self.offset_y = 0
+        
+        self.reset_game()
+        self.game_state = 'INTRO'
+        self.ui_bg = None
+
         self.update_scaling()
         
     def update_scaling(self):
@@ -2170,26 +2175,6 @@ class Tetris:
         gx = (pos[0] - self.offset_x) / self.scale
         gy = (pos[1] - self.offset_y) / self.scale
         return (gx, gy)
-
-        # Ensure single instance (Moved here to only run ONCE)
-        try:
-            import psutil
-            curr = os.getpid()
-            for p in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    if p.info['pid'] != curr:
-                        cmd = p.info.get('cmdline') or []
-                        if any('main.py' in str(part) for part in cmd):
-                            p.terminate()
-                except: continue
-        except: pass
-
-        self.reset_game()
-        self.game_state = 'PLAYING'  # Start playing immediately!
-        # Music started in reset_game via play_music_gameplay
-            
-        # UI Cache
-        self.ui_bg = None
 
     def reset_game(self):
         # Basic Stats (Init first to prevent draw crashes)
