@@ -1607,11 +1607,11 @@ class SoundManager:
         self.master_volume = 0.3
         self.manual_stop = False
         # Separate playlists for intro/lobby        # Intro Playlist
-        self.intro_playlist = ['intro_theme.mp3']
+        self.intro_playlist = []
         self.intro_track_index = 0
-        self.intro_track = self.intro_playlist[0]  # Start with first intro track
+        self.intro_track = None
         self._current_track = ''
-        self.muted = False 
+        self.muted = True # Start SILENT (v11) 
         
         # Gameplay playlist - All available tracks for variety!
         # Gameplay playlist - Priotize new songs!
@@ -1636,17 +1636,20 @@ class SoundManager:
         self.current_mode = 'intro'  # Track which mode we're in
         
         try: # Look for best intro track immediately
-            p_jazz = self._get_path('intro_theme.mp3')
+            p_jazz = self._get_path('02. undergroundtheme.mp3')
             if os.path.exists(p_jazz):
-                self.intro_track = 'intro_theme.mp3'
+                self.intro_track = '02. undergroundtheme.mp3'
             
             pygame.mixer.init()
             pygame.mixer.set_num_channels(24) 
-            pygame.mixer.set_reserved(2)
+            pygame.mixer.set_num_channels(24) 
+            # pygame.mixer.set_reserved(0) # No reserved channels needed
             
             # Create channels early
-            self.chan_neon = pygame.mixer.Channel(0)
-            self.chan_shadow = pygame.mixer.Channel(1)
+            # self.chan_neon = pygame.mixer.Channel(0)
+            # self.chan_shadow = pygame.mixer.Channel(1)
+            self.chan_neon = None
+            self.chan_shadow = None
             
             sfx_files = {
                 'rotate': 'rotate.wav',
@@ -1713,14 +1716,13 @@ class SoundManager:
 
     def play_music_slots(self):
         """Play slot machine bonus music"""
-        self.current_mode = 'slots'
-        self.stop_music()
-        if not self.slot_playlist: return
-        
-        # Cycle tracks
-        track = self.slot_playlist[self.slot_track_index]
-        self.slot_track_index = (self.slot_track_index + 1) % len(self.slot_playlist)
-        self.play_track(track)
+        self.stop_music() # Ensure silence
+        print("[SoundManager] Slot Music Disabled by Request")
+        # self.current_mode = 'slots'
+        # if not self.slot_playlist: return
+        # track = self.slot_playlist[self.slot_track_index]
+        # self.slot_track_index = (self.slot_track_index + 1) % len(self.slot_playlist)
+        # self.play_track(track)
 
     def next_track(self):
         """Cycle to next song in appropriate playlist"""
@@ -1746,10 +1748,12 @@ class SoundManager:
                 pygame.mixer.music.load(p)
                 pygame.mixer.music.play(-1)  # Loop
                 
-                # Force volume update immediately (Web Fix)
-                vol = 0 if self.muted else self.master_volume
-                try: pygame.mixer.music.set_volume(vol)
-                except: pass
+                # Check mute state and force PAUSE if needed
+                if self.muted:
+                    pygame.mixer.music.set_volume(0)
+                    pygame.mixer.music.pause()
+                else:
+                    pygame.mixer.music.set_volume(self.master_volume)
                 
                 self._current_track = track_name
                 self.manual_stop = False
@@ -1762,6 +1766,9 @@ class SoundManager:
         self.current_mode = 'intro'
         self.stop_music()  # Stop any dual-mode music
         
+        if not self.intro_playlist:
+            return
+
         # Get current intro track
         track_name = self.intro_playlist[self.intro_track_index]
         p = self._get_path(track_name)
@@ -1824,26 +1831,38 @@ class SoundManager:
         self.play('rotate') 
         
     def update(self, dt):
-        fade_speed = 3.0 * dt
-        if self.target_world == 'NEON':
-            self.current_vol_neon = min(1.0, self.current_vol_neon + fade_speed)
-            self.current_vol_shadow = max(0.0, self.current_vol_shadow - fade_speed)
-        else:
-            self.current_vol_neon = max(0.0, self.current_vol_neon - fade_speed)
-            self.current_vol_shadow = min(1.0, self.current_vol_shadow + fade_speed)
+        # Dual mode crossfade logic REMOVED
         self.update_volumes()
         
     def update_volumes(self):
         vol = 0 if self.muted else self.master_volume
-        # Update Music Stream
-        try: pygame.mixer.music.set_volume(vol)
-        except: pass
+        
+        # Track mute state change to trigger Pause/Unpause
+        if not hasattr(self, '_prev_muted'):
+            self._prev_muted = False
+            
+        if self.muted != self._prev_muted:
+            self._prev_muted = self.muted
+            try:
+                if self.muted:
+                    print("Muting: Pausing Music")
+                    pygame.mixer.music.pause()
+                else:
+                    print("Unmuting: Resuming Music")
+                    pygame.mixer.music.unpause()
+                    pygame.mixer.music.set_volume(vol)
+            except: pass
+        
+        # Continuously enforce volume (if unmuted)
+        if not self.muted:
+            try: pygame.mixer.music.set_volume(vol)
+            except: pass
         
         # Update Channels
-        if self.chan_neon: self.chan_neon.set_volume(self.current_vol_neon * vol)
-        if self.chan_shadow: self.chan_shadow.set_volume(self.current_vol_shadow * vol)
+        # Update Channels
+        if self.chan_neon: self.chan_neon.set_volume(0)
+        if self.chan_shadow: self.chan_shadow.set_volume(0)
         try:
-            pygame.mixer.music.set_volume(vol)
             # Apply volume to all loaded sounds
             for s in self.sounds.values():
                 s.set_volume(vol)
@@ -3698,34 +3717,52 @@ class Tetris:
                             self.sound_manager.toggle_mute()
                             ui_handled = True
                     
-                    # Check Tetris Button (Main Game)
-                    if self.game_state == 'INTRO' and hasattr(self, 'btn_tetris_rect'):
-                        if self.btn_tetris_rect.collidepoint(event.pos):
-                            print("Starting Tetris Mode...")
-                            print("Starting Tetris Mode...")
+                    # Check Tetris Button (Main Game) - ULTRA AGGRESSIVE FOR MOBILE
+                    if self.game_state == 'INTRO':
+                        # Any tap below the UI bar starts the game (mobile fix)
+                        if event.pos[1] > 60:
+                            print("Starting Tetris Mode (Mobile Touch)...")
                             self.reset_game()
                             self.game_state = 'PLAYING'
                             # self.sound_manager.start_dual_mode() # Removed to prevent double audio
                             ui_handled = True
                     
-                    # Gesture tracking (ONLY if UI wasn't clicked)
+                    # Mobile Controls (Zones + Swipes)
                     if self.game_state == 'PLAYING' and not ui_handled:
-                        self.gesture_controls.handle_touch_down(event.pos)
+                        # self.gesture_controls.handle_touch_down(event.pos)
+                        self.touch_start = event.pos
             
             if event.type == pygame.MOUSEBUTTONUP:
                 self.key_down_held = False
                 if self.game_state == 'INTRO' and hasattr(self, 'intro_scene'):
                         self.intro_scene.handle_mouse_up(event.pos)
                 
-                # Handle gesture completion
-                if self.game_state == 'PLAYING':
-                    action = self.gesture_controls.handle_touch_up(event.pos)
-                    if action:
-                        if action == 'LEFT': self.action_move(-1)
-                        elif action == 'RIGHT': self.action_move(1)
-                        elif action == 'SOFT_DROP': self.key_down_held = True  # Activate soft drop
-                        elif action == 'HARD_DROP': self.action_hard_drop()
-                        elif action == 'ROTATE': self.action_rotate()
+                # Mobile Logic (Zones) - Direct Implementation
+                if self.game_state == 'PLAYING' and hasattr(self, 'touch_start') and self.touch_start:
+                    start_pos = self.touch_start
+                    end_pos = event.pos
+                    dx = end_pos[0] - start_pos[0]
+                    dy = end_pos[1] - start_pos[1]
+                    dist = (dx**2 + dy**2)**0.5
+                    
+                    self.touch_start = None # Reset
+                    
+                    if dist > 50: # Swipe Detected
+                        if abs(dx) > abs(dy): # Horizontal Swipe
+                             # Optional: Swipe to dash? For now, stick to taps for precision
+                             pass 
+                        else: # Vertical Swipe
+                            if dy > 50: self.action_hard_drop() # Swipe Down = Hard Drop
+                            
+                    else: # Tap Detected
+                        x = end_pos[0]
+                        w = WINDOW_WIDTH
+                        if x < w * 0.34: 
+                            self.action_move(-1) # Left Zone (34%)
+                        elif x > w * 0.66: 
+                            self.action_move(1) # Right Zone (34%)
+                        else: 
+                            self.action_rotate() # Center Zone (Rest)
                     
             
             try:
