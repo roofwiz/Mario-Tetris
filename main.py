@@ -1757,6 +1757,8 @@ class SoundManager:
         p = self._get_path(track_name)
         
         if os.path.exists(p) and self._current_track != track_name:
+            # SAFETY FIRST: Ensure everything is stopped before loading new track
+            self.stop_music()
             try:
                 pygame.mixer.music.load(p)
                 pygame.mixer.music.play(-1)  # Loop
