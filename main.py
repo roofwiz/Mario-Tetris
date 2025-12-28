@@ -1,8 +1,11 @@
 
 import sys
 import os
-# Ensure current directory is in path for pygbag
-sys.path.append(os.getcwd())
+
+# Ensure game root is in path for web/pygbag
+game_root = os.path.dirname(os.path.abspath(__file__))
+if game_root not in sys.path:
+    sys.path.append(game_root)
 
 import pygame
 import random
@@ -13,8 +16,7 @@ from settings import game_settings
 from asset_loader import init_asset_loader, AssetLoader
 from asset_editor import AssetEditor
 from src.config import *
-from src.ai_player import TetrisBot  # Import Bot
-from src.config import *
+from src.ai_player import TetrisBot
 from src.luigi_generator import generate_luigi_sprites
 from src.bonus_level import BonusLevel
 from src.scene_dark_world import Scene_DarkWorld
@@ -2966,10 +2968,10 @@ class Tetris:
             elif self.game_state == 'BONUS':
                 if self.bonus_level: self.bonus_level.draw(target)
             elif self.game_state == 'SLOT_MACHINE':
-                self._draw_actual_game()
+                self._draw_actual_game(target)
                 if self.slot_machine: self.slot_machine.draw(target)
             elif self.game_state == 'COUNTDOWN':
-                self._draw_actual_game()
+                self._draw_actual_game(target)
                 # Dark overlay
                 overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 150))
@@ -2985,7 +2987,7 @@ class Tetris:
                     main_txt = big_font.render(str(countdown_val), True, (255, 255, 0))
                     target.blit(main_txt, main_txt.get_rect(center=(cx, cy)))
             else:
-                self._draw_actual_game()
+                self._draw_actual_game(target)
 
             self.draw_persistent_ui(target)
             
@@ -3098,8 +3100,9 @@ class Tetris:
                 pygame.draw.circle(surf, (255, 0, 0, alpha), (radius, radius), radius, 3)
                 self.screen.blit(surf, (pos[0] - radius, pos[1] - radius))
 
-    def _draw_actual_game(self):
+    def _draw_actual_game(self, target):
         try:
+            # We draw everything to target (self.game_surface)
             if self.game_state == 'WORLD_CLEAR':
                 # Draw the game board behind the pipe
                 pass 
@@ -3473,42 +3476,40 @@ class Tetris:
             # Responsive Layout Logic
             is_vertical = WINDOW_HEIGHT > WINDOW_WIDTH * 1.2
             
-            # Apply Camera Zoom (ONLY if Vertical)
+            # Apply Camera Zoom / Effect ONTO target (if vertically oriented)
             if is_vertical and self.camera_zoom > 1.01:
-                # Calculate Crop Rect
+                # Copy current target state to crop it from
+                raw_draw = target.copy()
+                
                 # Anchor bottom-center
                 view_w = int(WINDOW_WIDTH / self.camera_zoom)
                 view_h = int(WINDOW_HEIGHT / self.camera_zoom)
                 
                 # PANNING LOGIC
-                # Target center is piece position
-                target_center_x = WINDOW_WIDTH // 2 # Default center
+                target_center_x = WINDOW_WIDTH // 2
                 if hasattr(self, 'current_piece') and self.current_piece:
                      px = PLAYFIELD_X + (self.current_piece.x + 2) * BLOCK_SIZE
                      target_center_x = px
                 
                 target_view_x = target_center_x - (view_w // 2)
-                
-                # Smooth Pan with Deadzone
                 if not hasattr(self, 'camera_x'): self.camera_x = 0
-                
                 diff = target_view_x - self.camera_x
-                if abs(diff) > 20: # Deadzone
-                    self.camera_x += diff * 0.05 # Slower Pan
+                if abs(diff) > 20: self.camera_x += diff * 0.05
                 
                 view_x = int(self.camera_x)
-                view_y = WINDOW_HEIGHT - view_h # Anchor Bottom
-                
-                # Safety Clip
+                view_y = WINDOW_HEIGHT - view_h
                 view_x = max(0, min(view_x, WINDOW_WIDTH - view_w))
                 view_y = max(0, view_y)
                 
-                sub = self.game_surface.subsurface((view_x, view_y, view_w, view_h))
+                sub = raw_draw.subsurface((view_x, view_y, view_w, view_h))
                 scaled = pygame.transform.smoothscale(sub, (WINDOW_WIDTH, WINDOW_HEIGHT))
-                self.screen.blit(scaled, self.shake_offset)
+                target.blit(scaled, self.shake_offset)
             else:
-                # Horizontal Mode: Keep Centered, No Zoom
-                self.screen.blit(self.game_surface, self.shake_offset)
+                # Horizontal Mode: Just apply shake offset if any
+                if self.shake_offset != (0,0):
+                    raw_draw = target.copy()
+                    target.fill((0,0,0))
+                    target.blit(raw_draw, self.shake_offset)
 
             # Special Overlays
             if self.game_state == 'WORLD_CLEAR':
@@ -3517,14 +3518,14 @@ class Tetris:
 
             # Draw Scanline Overlay (Retro Vibe)
             if self.scanline_overlay:
-                 self.screen.blit(self.scanline_overlay, (0,0))
+                 target.blit(self.scanline_overlay, (0,0))
                  
             # Draw gesture tutorial if enabled
             if getattr(self, 'show_gesture_tutorial', False):
-                self.gesture_controls.draw_tutorial(self.screen, self.font_small)
+                self.gesture_controls.draw_tutorial(target, self.font_small)
             
             # Draw Bot Debug
-            if hasattr(self, 'ai_bot'): self.ai_bot.draw_debug(self.screen)
+            if hasattr(self, 'ai_bot'): self.ai_bot.draw_debug(target)
 
         except Exception as e:
             self.log_event(f"CRASH IN DRAW: {e}")
@@ -3536,11 +3537,12 @@ class Tetris:
 
     def draw_world_clear(self):
         try:
+            target = self.game_surface
             # Stats Screen - Use Overlay
             overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
             overlay.set_alpha(180) # Lighter alpha so game is visible
             overlay.fill((0, 0, 0))
-            self.screen.blit(overlay, (0, 0))
+            target.blit(overlay, (0, 0))
             
             # Center info
             cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
@@ -3567,12 +3569,12 @@ class Tetris:
             l5 = self.font_med.render("NEXT: BONUS ROUND...", True, (200, 200, 255))
             l6 = self.font_med.render(theme_txt, True, C_WHITE) # Theme info
 
-            self.screen.blit(l1, l1.get_rect(center=(cx, cy - 140)))
-            self.screen.blit(l6, l6.get_rect(center=(cx, cy - 90))) # Theme
-            self.screen.blit(l2, l2.get_rect(center=(cx, cy - 40)))
-            self.screen.blit(l3, l3.get_rect(center=(cx, cy + 10)))
-            self.screen.blit(l4, l4.get_rect(center=(cx, cy + 70)))
-            self.screen.blit(l5, l5.get_rect(center=(cx, cy + 130)))
+            target.blit(l1, l1.get_rect(center=(cx, cy - 140)))
+            target.blit(l6, l6.get_rect(center=(cx, cy - 90))) # Theme
+            target.blit(l2, l2.get_rect(center=(cx, cy - 40)))
+            target.blit(l3, l3.get_rect(center=(cx, cy + 10)))
+            target.blit(l4, l4.get_rect(center=(cx, cy + 70)))
+            target.blit(l5, l5.get_rect(center=(cx, cy + 130)))
             
         except Exception as e:
             print(f"Error drawing world clear: {e}")
@@ -3599,7 +3601,8 @@ class Tetris:
             pygame.draw.rect(target, (255, 0, 0), (mx, my, 50, 50))  # Red (should not happen)
 
     def draw_game_over(self):
-        self.screen.fill((50, 0, 0))
+        target = self.game_surface
+        target.fill((50, 0, 0))
         font_big = pygame.font.SysFont('Arial', 60, bold=True)
         font_small = pygame.font.SysFont('Arial', 30)
         
@@ -3607,10 +3610,10 @@ class Tetris:
         score = font_small.render(f"FINAL SCORE: {self.score}", True, (255, 215, 0))
         retry = font_small.render("PRESS ENTER TO RETRY", True, C_WHITE)
         
-        cx, cy = self.screen.get_rect().center
-        self.screen.blit(title, title.get_rect(center=(cx, cy - 50)))
-        self.screen.blit(score, score.get_rect(center=(cx, cy + 20)))
-        self.screen.blit(retry, retry.get_rect(center=(cx, cy + 80)))
+        cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
+        target.blit(title, title.get_rect(center=(cx, cy - 50)))
+        target.blit(score, score.get_rect(center=(cx, cy + 20)))
+        target.blit(retry, retry.get_rect(center=(cx, cy + 80)))
 
     # --- Input Actions ---
     def action_move(self, dx):
