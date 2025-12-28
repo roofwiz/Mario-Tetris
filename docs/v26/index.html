@@ -262,7 +262,7 @@ asyncio.run( custom_site() )
             ume_block: 1,
             can_close: 0,
             archive: 0,
-            gui_debug: 0,
+            gui_debug: 3,
             cdn: "https://pygame-web.github.io/archives/0.9/",
             autorun: 0,
             PYBUILD: "3.12"
@@ -455,7 +455,7 @@ asyncio.run( custom_site() )
         <label for="dlg_multifile">Select files</label>
     </div>
 
-    <div id="pyconsole">
+    <div id="pyconsole" style="opacity: 0; position: absolute; z-index: -10; pointer-events: none;">
         <div id="terminal" tabIndex=1 align="left"></div>
     </div>
 
