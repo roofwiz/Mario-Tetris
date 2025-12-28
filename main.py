@@ -3007,6 +3007,18 @@ class Tetris:
             dx = int(14 * math.cos(math.radians(angle)))
             dy = int(14 * math.sin(math.radians(angle)))
             pygame.draw.circle(self.screen, (200, 200, 200), (gx + dx, gy + dy), 4)
+        
+        # DEBUG: Draw touch feedback (red circles that fade)
+        if hasattr(self, 'touch_debug_pos'):
+            current_time = pygame.time.get_ticks()
+            self.touch_debug_pos = [(pos, t) for pos, t in self.touch_debug_pos if current_time - t < 1000]
+            for pos, timestamp in self.touch_debug_pos:
+                age = current_time - timestamp
+                alpha = max(0, 255 - int(age * 0.255))
+                radius = 30 + int(age * 0.02)
+                surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(surf, (255, 0, 0, alpha), (radius, radius), radius, 3)
+                self.screen.blit(surf, (pos[0] - radius, pos[1] - radius))
 
     def _draw_actual_game(self):
         try:
@@ -3689,9 +3701,16 @@ class Tetris:
                 # Get position (FINGERDOWN uses normalized coords 0-1, need to scale)
                 if event.type == pygame.FINGERDOWN:
                     touch_pos = (int(event.x * WINDOW_WIDTH), int(event.y * WINDOW_HEIGHT))
+                    print(f"FINGERDOWN at normalized ({event.x:.3f}, {event.y:.3f}) -> pixel {touch_pos}")
                 else:
                     if event.button != 1: continue
                     touch_pos = event.pos
+                    print(f"MOUSEBUTTONDOWN at {touch_pos}")
+                
+                # Visual feedback for debugging (draw a circle at touch point)
+                if not hasattr(self, 'touch_debug_pos'):
+                    self.touch_debug_pos = []
+                self.touch_debug_pos.append((touch_pos, pygame.time.get_ticks()))
                 
                 ui_handled = False
                 
