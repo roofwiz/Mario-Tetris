@@ -1,9 +1,12 @@
 
+import sys
+import os
+# Ensure current directory is in path for pygbag
+sys.path.append(os.getcwd())
+
 import pygame
 import random
-import sys
 import json
-import os
 import asyncio
 import math
 from settings import game_settings
@@ -15,7 +18,7 @@ from src.config import *
 from src.luigi_generator import generate_luigi_sprites
 from src.bonus_level import BonusLevel
 from src.scene_dark_world import Scene_DarkWorld
-from src.slot_machine import SlotMachine
+# from src.slot_machine import SlotMachine # Removed in v26
 
 # --- Game Configuration ---
 
@@ -2139,14 +2142,32 @@ class Tetris:
         
         self.intro_timer = 0
         
-        # Scaling Init
+        # Scaling & Mobile Response Init
         self.fullscreen = False
+        self.is_mobile = False 
+        self.is_portrait = False
+        self.scale = 1.0
+        self.offset_x = 0
+        self.offset_y = 0
+        self.update_scaling()
+        
+    def update_scaling(self):
         sw, sh = self.screen.get_size()
+        self.is_portrait = sh > sw
+        self.is_mobile = sw < 800 or self.is_portrait
+        
+        # Calculate Letterbox Scaling
         scale_w = sw / WINDOW_WIDTH
         scale_h = sh / WINDOW_HEIGHT
         self.scale = min(scale_w, scale_h)
         self.offset_x = (sw - (WINDOW_WIDTH * self.scale)) // 2
         self.offset_y = (sh - (WINDOW_HEIGHT * self.scale)) // 2
+        
+    def get_game_coords(self, pos):
+        """Convert screen pixels to virtual game pixels (1280x720)"""
+        gx = (pos[0] - self.offset_x) / self.scale
+        gy = (pos[1] - self.offset_y) / self.scale
+        return (gx, gy)
 
         # Ensure single instance (Moved here to only run ONCE)
         try:
@@ -2937,20 +2958,22 @@ class Tetris:
 
     def draw(self):
         try:
+            # Always Draw to Virtual Surface first
+            target = self.game_surface
+            
             if self.game_state == 'INTRO':
                 self.draw_intro()
             elif self.game_state == 'BONUS':
-                if self.bonus_level: self.bonus_level.draw(self.screen)
+                if self.bonus_level: self.bonus_level.draw(target)
             elif self.game_state == 'SLOT_MACHINE':
                 self._draw_actual_game()
-                if self.slot_machine: self.slot_machine.draw(self.screen)
+                if self.slot_machine: self.slot_machine.draw(target)
             elif self.game_state == 'COUNTDOWN':
-                # Draw game in background (frozen)
                 self._draw_actual_game()
                 # Dark overlay
                 overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 150))
-                self.screen.blit(overlay, (0, 0))
+                target.blit(overlay, (0, 0))
                 # Big countdown number
                 countdown_val = getattr(self, 'countdown_value', 3)
                 if countdown_val > 0:
@@ -2958,54 +2981,53 @@ class Tetris:
                         big_font = pygame.font.SysFont('arial black', 120, bold=True)
                     except:
                         big_font = self.font_big
-                    # Shadow
-                    shadow = big_font.render(str(countdown_val), True, (0, 0, 0))
-                    main_txt = big_font.render(str(countdown_val), True, (255, 255, 0))
                     cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
-                    self.screen.blit(shadow, shadow.get_rect(center=(cx + 5, cy + 5)))
-                    self.screen.blit(main_txt, main_txt.get_rect(center=(cx, cy)))
-                    # "GET READY" text
-                    ready_txt = self.font_med.render("GET READY!", True, (255, 255, 255))
-                    self.screen.blit(ready_txt, ready_txt.get_rect(center=(cx, cy - 100)))
-                    # Show session winnings if any
-                    session_win = getattr(self.slot_machine, 'session_winnings', 0)
-                    if session_win > 0:
-                        win_txt = self.font_med.render(f"SLOTS WON: +{int(session_win)}", True, (255, 215, 0))
-                        self.screen.blit(win_txt, win_txt.get_rect(center=(cx, cy + 100)))
+                    main_txt = big_font.render(str(countdown_val), True, (255, 255, 0))
+                    target.blit(main_txt, main_txt.get_rect(center=(cx, cy)))
             else:
                 self._draw_actual_game()
 
-            self.draw_persistent_ui()
+            self.draw_persistent_ui(target)
+            
+            # FINAL SCALING BLIT TO PHYSICAL SCREEN
+            self.screen.fill((0, 0, 0)) # Clean margins
+            scaled_surf = pygame.transform.scale(self.game_surface, 
+                                               (int(WINDOW_WIDTH * self.scale), 
+                                                int(WINDOW_HEIGHT * self.scale)))
+            self.screen.blit(scaled_surf, (self.offset_x, self.offset_y))
+            
             pygame.display.flip()
         except Exception as e:
             self.log_event(f"DRAW ERROR: {e}")
 
     def draw_intro(self):
         try:
-            self.intro_scene.draw(self.screen, muted=self.sound_manager.muted)
-            cx, cy = self.screen.get_rect().center
+            target = self.game_surface
+            self.intro_scene.draw(target, muted=self.sound_manager.muted)
+            cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2
             title_shadow = self.font_big.render("MARIO TETRIS", True, (0, 0, 0))
-            self.screen.blit(title_shadow, title_shadow.get_rect(center=(cx + 4, cy - 146)))
+            target.blit(title_shadow, title_shadow.get_rect(center=(cx + 4, cy - 146)))
             title = self.font_big.render("MARIO TETRIS", True, C_NEON_PINK)
-            self.screen.blit(title, title.get_rect(center=(cx, cy - 150)))
+            target.blit(title, title.get_rect(center=(cx, cy - 150)))
             esc = self.font_small.render("PRESS ESC TO QUIT", True, C_WHITE)
-            self.screen.blit(esc, esc.get_rect(center=(cx, cy + 140)))
+            target.blit(esc, esc.get_rect(center=(cx, cy + 140)))
             
             # Larger Hitbox for Mobile
             tetris_btn_rect = pygame.Rect(0, 0, 400, 100); tetris_btn_rect.center = (cx, cy + 20)
             self.btn_tetris_rect = tetris_btn_rect
-            pygame.draw.rect(self.screen, (255, 20, 147), tetris_btn_rect, border_radius=15)
-            pygame.draw.rect(self.screen, C_WHITE, tetris_btn_rect, 2, border_radius=15)
+            pygame.draw.rect(target, (255, 20, 147), tetris_btn_rect, border_radius=15)
+            pygame.draw.rect(target, C_WHITE, tetris_btn_rect, 2, border_radius=15)
             t_surf = self.font_small.render("PLAY MARIO TETRIS", True, C_WHITE)
-            self.screen.blit(t_surf, t_surf.get_rect(center=tetris_btn_rect.center))
+            target.blit(t_surf, t_surf.get_rect(center=tetris_btn_rect.center))
             
             # BIG "TAP ANYWHERE" text for mobile
             tap_text = self.font_med.render("TAP ANYWHERE TO START", True, (255, 255, 0))
-            self.screen.blit(tap_text, tap_text.get_rect(center=(cx, cy + 80)))
+            target.blit(tap_text, tap_text.get_rect(center=(cx, cy + 80)))
             
             # DIRECT MOUSE POLLING (bypass events for mobile)
             mouse_buttons = pygame.mouse.get_pressed()
-            mouse_pos = pygame.mouse.get_pos()
+            real_mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = self.get_game_coords(real_mouse_pos)
             if mouse_buttons[0]:  # Left click/touch
                 if not hasattr(self, '_intro_click_handled'):
                     self._intro_click_handled = True
@@ -3019,7 +3041,7 @@ class Tetris:
         except Exception as e:
             self.log_event(f"INTRO DRAW ERROR: {e}")
 
-    def draw_persistent_ui(self):
+    def draw_persistent_ui(self, target):
         ui_w, ui_h = 480, 50
         ui_x, ui_y = (WINDOW_WIDTH - ui_w) // 2, 5
         
@@ -3027,42 +3049,42 @@ class Tetris:
             self.ui_bg = pygame.Surface((ui_w, ui_h), pygame.SRCALPHA)
             pygame.draw.rect(self.ui_bg, (0, 0, 0, 160), (0, 0, ui_w, ui_h), border_radius=12)
         
-        self.screen.blit(self.ui_bg, (ui_x, ui_y))
+        target.blit(self.ui_bg, (ui_x, ui_y))
         
         # Mute
         self.mute_btn_rect = pygame.Rect(ui_x + 10, ui_y + 5, 40, 40)
-        pygame.draw.rect(self.screen, (70, 70, 90), self.mute_btn_rect, border_radius=8)
+        pygame.draw.rect(target, (70, 70, 90), self.mute_btn_rect, border_radius=8)
         m_cx, m_cy = self.mute_btn_rect.center
-        pygame.draw.rect(self.screen, C_WHITE, (m_cx-7, m_cy-4, 7, 8))
-        pygame.draw.polygon(self.screen, C_WHITE, [(m_cx, m_cy-8), (m_cx+8, m_cy-12), (m_cx+8, m_cy+12), (m_cx, m_cy+8)])
+        pygame.draw.rect(target, C_WHITE, (m_cx-7, m_cy-4, 7, 8))
+        pygame.draw.polygon(target, C_WHITE, [(m_cx, m_cy-8), (m_cx+8, m_cy-12), (m_cx+8, m_cy+12), (m_cx, m_cy+8)])
         if self.sound_manager.muted:
-            pygame.draw.line(self.screen, (255, 0, 0), (m_cx-12, m_cy-12), (m_cx+12, m_cy+12), 4)
+            pygame.draw.line(target, (255, 0, 0), (m_cx-12, m_cy-12), (m_cx+12, m_cy+12), 4)
 
         # Volume
         self.vol_rect = pygame.Rect(ui_x + 60, ui_y + 20, 150, 10)
-        pygame.draw.rect(self.screen, (40, 40, 50), self.vol_rect, border_radius=5)
+        pygame.draw.rect(target, (40, 40, 50), self.vol_rect, border_radius=5)
         
         # Corrected volume property access
         v_val = getattr(self.sound_manager, 'master_volume', 0.5)
         v_fill = int(v_val * 150)
-        pygame.draw.rect(self.screen, (0, 180, 255), (ui_x + 60, ui_y + 20, v_fill, 10), border_radius=5)
-        pygame.draw.circle(self.screen, C_WHITE, (ui_x + 60 + v_fill, ui_y + 25), 8)
+        pygame.draw.rect(target, (0, 180, 255), (ui_x + 60, ui_y + 20, v_fill, 10), border_radius=5)
+        pygame.draw.circle(target, C_WHITE, (ui_x + 60 + v_fill, ui_y + 25), 8)
 
         # Song
         self.song_btn_rect = pygame.Rect(ui_x + 220, ui_y + 5, 190, 40)
-        pygame.draw.rect(self.screen, (0, 120, 215), self.song_btn_rect, border_radius=10)
+        pygame.draw.rect(target, (0, 120, 215), self.song_btn_rect, border_radius=10)
         tr = self.sound_manager.neon_playlist[self.sound_manager.neon_track_index]
         s_txt = self.font_small.render(f"MUSIC: {tr[:14]}", True, C_WHITE)
-        self.screen.blit(s_txt, s_txt.get_rect(center=self.song_btn_rect.center))
+        target.blit(s_txt, s_txt.get_rect(center=self.song_btn_rect.center))
 
         # Settings (Gear)
         self.settings_btn_rect = pygame.Rect(ui_x + 420, ui_y + 5, 40, 40)
-        pygame.draw.rect(self.screen, (60, 60, 80), self.settings_btn_rect, border_radius=8)
+        pygame.draw.rect(target, (60, 60, 80), self.settings_btn_rect, border_radius=8)
         gx, gy = self.settings_btn_rect.center
         for angle in range(0, 360, 45):
             dx = int(14 * math.cos(math.radians(angle)))
             dy = int(14 * math.sin(math.radians(angle)))
-            pygame.draw.circle(self.screen, (200, 200, 200), (gx + dx, gy + dy), 4)
+            pygame.draw.circle(target, (200, 200, 200), (gx + dx, gy + dy), 4)
         
         # DEBUG: Draw touch feedback (red circles that fade)
         if hasattr(self, 'touch_debug_pos'):
@@ -3526,8 +3548,8 @@ class Tetris:
             # Draw Panel
             panel_rect = pygame.Rect(0, 0, 600, 400)
             panel_rect.center = (cx, cy)
-            pygame.draw.rect(self.screen, (20, 20, 40), panel_rect, border_radius=20)
-            pygame.draw.rect(self.screen, C_NEON_PINK, panel_rect, 4, border_radius=20)
+            pygame.draw.rect(target, (20, 20, 40), panel_rect, border_radius=20)
+            pygame.draw.rect(target, C_NEON_PINK, panel_rect, 4, border_radius=20)
             
             # Text
             l1 = self.font_big.render("LEVEL CLEARED!", True, C_NEON_PINK)
@@ -3574,7 +3596,7 @@ class Tetris:
             self.screen.blit(m_frame, (mx, my))
         else:
             # Fallback: draw Mario-colored placeholder
-            pygame.draw.rect(self.screen, (255, 0, 0), (mx, my, 50, 50))  # Red (should not happen)
+            pygame.draw.rect(target, (255, 0, 0), (mx, my, 50, 50))  # Red (should not happen)
 
     def draw_game_over(self):
         self.screen.fill((50, 0, 0))
@@ -3700,6 +3722,11 @@ class Tetris:
             # Input (Updated from previous remappings)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: self.running = False
+                if event.type == pygame.VIDEORESIZE:
+                    self.update_scaling()
+                    # Re-init gesture controls with new dimensions if they existed
+                    if hasattr(self, 'gesture_controls'):
+                        self.gesture_controls = GestureControls((WINDOW_WIDTH, WINDOW_HEIGHT))
                 
                 # Slot Input (First Priority)
                 if self.game_state == 'SLOT_MACHINE':
@@ -3765,14 +3792,14 @@ class Tetris:
                 
             # Handle FINGERDOWN (true mobile touch) in addition to MOUSEBUTTONDOWN
             if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN) and self.game_state != 'SLOT_MACHINE':
-                # Get position (FINGERDOWN uses normalized coords 0-1, need to scale)
+                # Get position and map to game coordinates
                 if event.type == pygame.FINGERDOWN:
-                    touch_pos = (int(event.x * WINDOW_WIDTH), int(event.y * WINDOW_HEIGHT))
-                    print(f"FINGERDOWN at normalized ({event.x:.3f}, {event.y:.3f}) -> pixel {touch_pos}")
+                    sw, sh = self.screen.get_size()
+                    real_pos = (int(event.x * sw), int(event.y * sh))
+                    touch_pos = self.get_game_coords(real_pos)
                 else:
                     if event.button != 1: continue
-                    touch_pos = event.pos
-                    print(f"MOUSEBUTTONDOWN at {touch_pos}")
+                    touch_pos = self.get_game_coords(event.pos)
                 
                 # Visual feedback for debugging (draw a circle at touch point)
                 if not hasattr(self, 'touch_debug_pos'):
