@@ -1494,6 +1494,7 @@ class Grid:
     def clear_lines(self):
         lines_cleared = 0
         special_events = [] # For coins, items etc
+        completed_line_indices = []  # Track which lines are complete for animation
         
         rows_to_keep = []
         for y in range(GRID_HEIGHT):
@@ -1502,6 +1503,7 @@ class Grid:
                 rows_to_keep.append(cols)
             else:
                 lines_cleared += 1
+                completed_line_indices.append(y)  # Save line index for animation
                 # Check for special blocks in this line
                 for block in cols:
                     if block.type == 'coin': special_events.append('COIN')
@@ -1515,7 +1517,7 @@ class Grid:
         else: self.grid_neon = rows_to_keep
         self.grid = rows_to_keep # Update Pointer
         
-        return lines_cleared, special_events
+        return lines_cleared, special_events, completed_line_indices
 
     def draw(self, screen, total_time, draw_bg=True, alpha=255, level=1):
         # Draw Background 
