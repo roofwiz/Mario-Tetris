@@ -2159,11 +2159,12 @@ class Tetris:
             self.sound_manager.stop_music()
 
         self.reset_game()
-        self.game_state = 'INTRO'
+        # Direct Start - Skip Intro
+        self.game_state = 'PLAYING'
         
-        # Start Intro Music EXPLICITLY
+        # Start Gameplay Music Directly
         if hasattr(self, 'sound_manager'):
-             self.sound_manager.play_music_intro()
+             self.sound_manager.play_music_gameplay()
              
         self.ui_bg = None
 
