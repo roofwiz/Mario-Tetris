@@ -3738,7 +3738,6 @@ class Tetris:
                         if event.key == pygame.K_RETURN:
                             self.reset_game()
                             self.game_state = 'PLAYING'
-                            self.sound_manager.start_dual_mode()  # Start gameplay music
                             
                     # Gameplay Controls
                     if self.game_state == 'PLAYING':
