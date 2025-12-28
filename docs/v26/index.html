@@ -94,7 +94,7 @@ async def custom_site():
 
 
 
-    apk = "mario-tetris-v26-final.apk"
+    apk = "mario-tetris-v26-direct.apk"
 
     bundle = "mario-tetris-main"
 
@@ -242,12 +242,12 @@ asyncio.run( custom_site() )
         // END BLOCK
 
         // Hide loading message wt        ener('load', fun        ction () {
-            setTimeout(function () {
-                        var loadin             = docuent.gtE            ntByI('loading-me            e');
-                       if (loadingMsg) {
-                           oadin            .style.diplay             one';
-               }
-                    }, 3000)
+        setTimeout(function () {
+            var loadin = docuent.gtE            ntByI('loading-me            e');
+            if (loadingMsg) {
+                oadin.style.diplay             one';
+            }
+        }, 3000)
                 });
 
 
@@ -454,39 +454,39 @@ asyncio.run( custom_site() )
 
     <script type="application/javascript">
 
-            async function custom_o nl            g_hidden) {
+        async function custom_o nl            g_hidden) {
             // this is called be            thing python is loaded
             // ma        our        customization here
-                     ole.log(__FILE__, "custom_onload")
+            ole.log(__FILE__, "custom_onload")
 
-                  console.hidden = debug_hidden
-                       hidden = debug_hidden
-                      er.hidden = debug_hidden
-            info.h idden                 en 
-             box.hid den = debug_ hidden
+            console.hidden = debug_hidden
+            hidden = debug_hidden
+            er.hidden = debug_hidden
+            info.h idden                 en
+            box.hid den = debug_ hidden
 
-         }
+        }
 
         function custom_prerun(                    // no python main and no (                                  console.lo                "c            erun")
 
             }
 
-            function custom            () {
+            function custom() {
             // python main and no VFS filesystem                      console.log(__FILE__, "custom_postrun")
 
-                   prevent ff horizontal scrol                  window.addEvent            ("keydown", function (e) {
+                   prevent ff horizontal scrol                  window.addEvent("keydown", function (e) {
                 i            ce", "ArrowUp",         owD        , "ArrowLeft", "ArrowRight "]            (e.code) > -1) {
-                    if (!python.        ig.        g)
+            if (!python.ig.g)
                         e            Default();
-                }
-                 , fals);
+        }
+            , fals);
 
         }
 
-                     debug() {
+        debug() {
             // allow to gai                dev tools from js                         // but only on                  di                to reach when in ifr                        python.config.deb                e
-                     ustom_onload(false)
-                     e.PyRun_SimpleString("shell.uptime()")
+            ustom_onload(false)
+            e.PyRun_SimpleString("shell.uptime()")
             windze()
         }
 
