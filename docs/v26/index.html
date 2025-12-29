@@ -374,32 +374,15 @@ asyncio.run( custom_site() )
 
         #loading-message {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: black;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             font-family: Arial, sans-serif;
             font-size: 32px;
             font-weight: bold;
             color: #FF1493;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            z-index: 20;
-        }
-
-        #pyconsole {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            color: transparent;
-            background-color: transparent;
-            pointer-events: none;
+            z-index: 1000;
         }
     </style>
 
@@ -498,13 +481,6 @@ asyncio.run( custom_site() )
         function custom_postrun() {
             // python main and no VFS filesystem yet.
             console.log(__FILE__, "custom_postrun")
-
-            // Just wait and hide the loading screen. 
-            // The console is already invisible via CSS.
-            setTimeout(function () {
-                var lm = document.getElementById('loading-message');
-                if (lm) lm.style.display = 'none';
-            }, 2500);
         }
 
         function debug() {
