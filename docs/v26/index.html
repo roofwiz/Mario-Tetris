@@ -387,7 +387,19 @@ asyncio.run( custom_site() )
             font-weight: bold;
             color: #FF1493;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            z-index: 99999;
+            z-index: 20;
+        }
+
+        #pyconsole {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            color: transparent;
+            background-color: transparent;
+            pointer-events: none;
         }
     </style>
 
@@ -487,19 +499,12 @@ asyncio.run( custom_site() )
             // python main and no VFS filesystem yet.
             console.log(__FILE__, "custom_postrun")
 
-            // SAFE SEQUENTIAL REVEAL
+            // Just wait and hide the loading screen. 
+            // The console is already invisible via CSS.
             setTimeout(function () {
-                // 1. Hide Console (It is now safe to do so)
-                var pc = document.getElementById('pyconsole');
-                if (pc) pc.hidden = true;
-
-                // 2. Hide Loading Screen (Reveal Game)
-                setTimeout(function () {
-                    var lm = document.getElementById('loading-message');
-                    if (lm) lm.style.display = 'none';
-                }, 500); // Small buffer after console hide
-
-            }, 2500); // Wait 2.5s total for everything to settle
+                var lm = document.getElementById('loading-message');
+                if (lm) lm.style.display = 'none';
+            }, 2500);
         }
 
         function debug() {
