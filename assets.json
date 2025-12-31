@@ -13,19 +13,20 @@
         "items_coins": "items-coins.png"
     },
     "sounds": {
-        "move": "move.wav",
+        "move": "rotate.wav",
         "rotate": "rotate.wav",
         "clear": "clear.wav",
-        "tetris": "tetris.wav",
-        "drop": "drop.wav",
-        "stomp": "lock.wav",
-        "damage": "damage.wav",
+        "tetris": "clear.wav",
+        "drop": "lock.wav",
+        "stomp": "stomp.wav",
+        "damage": "stomp.wav",
         "gameover": "gameover.wav",
-        "level_up": "level.wav",
-        "life": "clear.wav",
-        "world_clear": "world_clear.wav",
-        "music": "music.mp3",
-        "lock": "lock.wav"
+        "level_up": "life.wav",
+        "life": "life.wav",
+        "world_clear": "clear.wav",
+        "music": "02. undergroundtheme.mp3",
+        "lock": "lock.wav",
+        "coin": "life.wav"
     },
     "sprite_coords": {
         "items": {
@@ -345,10 +346,16 @@
         },
         "lakitu": {
             "default": {
-                "x": 8,
-                "y": 246,
-                "w": 24,
-                "h": 32
+                "x": 6,
+                "y": 366,
+                "w": 32,
+                "h": 24
+            },
+            "throw": {
+                "x": 47,
+                "y": 366,
+                "w": 32,
+                "h": 24
             }
         },
         "cloud": {
@@ -411,6 +418,78 @@
                 "y": 287,
                 "w": 16,
                 "h": 16
+            }
+        },
+        "bowser": {
+            "walk_1": {
+                "x": 0,
+                "y": 397,
+                "w": 32,
+                "h": 35
+            },
+            "walk_2": {
+                "x": 40,
+                "y": 398,
+                "w": 32,
+                "h": 34
+            },
+            "walk_3": {
+                "x": 80,
+                "y": 397,
+                "w": 32,
+                "h": 35
+            },
+            "walk_4": {
+                "x": 120,
+                "y": 397,
+                "w": 31,
+                "h": 36
+            },
+            "fire_1": {
+                "x": 160,
+                "y": 416,
+                "w": 24,
+                "h": 12
+            },
+            "fire_2": {
+                "x": 200,
+                "y": 416,
+                "w": 24,
+                "h": 12
+            }
+        },
+        "hammerbro": {
+            "walk_1": {
+                "x": 224,
+                "y": 361,
+                "w": 16,
+                "h": 24
+            },
+            "walk_2": {
+                "x": 264,
+                "y": 361,
+                "w": 16,
+                "h": 24
+            },
+            "throw_1": {
+                "x": 304,
+                "y": 361,
+                "w": 16,
+                "h": 24
+            },
+            "throw_2": {
+                "x": 344,
+                "y": 361,
+                "w": 16,
+                "h": 24
+            }
+        },
+        "hammer": {
+            "default": {
+                "x": 350,
+                "y": 361,
+                "w": 8,
+                "h": 8
             }
         }
     }

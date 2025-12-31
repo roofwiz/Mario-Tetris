@@ -222,14 +222,28 @@ class AssetLoader:
         if not filename:
             return None
         
-        path = os.path.join('sounds', filename)
-        if os.path.exists(path):
-            try:
-                sound = pygame.mixer.Sound(path)
-                self.sounds[sound_name] = sound
-                return sound
-            except Exception as e:
-                print(f"[AssetLoader] Failed to load sound {sound_name}: {e}")
+        # Try multiple paths for robustness
+        paths = [
+            os.path.join(self.base_path, 'sounds', filename),
+            os.path.join(self.base_path, filename),
+            os.path.join('sounds', filename),
+            filename
+        ]
+        
+        # In web environment, we might need forward slashes
+        if sys.platform == 'emscripten':
+            paths = [p.replace('\\', '/') for p in paths]
+            
+        for path in paths:
+            if os.path.exists(path):
+                try:
+                    sound = pygame.mixer.Sound(path)
+                    self.sounds[sound_name] = sound
+                    return sound
+                except Exception as e:
+                    print(f"[AssetLoader] Failed to load sound {sound_name} from {path}: {e}")
+        
+        print(f"[AssetLoader] Sound NOT found: {sound_name} ({filename})")
         return None
     
     def play_sound(self, sound_name):

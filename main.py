@@ -13,6 +13,14 @@ import random
 import json
 import asyncio
 import math
+import sys
+
+# Early Mixer Hint for Pygbag/Web
+try:
+    if not pygame.mixer.get_init():
+        pygame.mixer.pre_init(44100, -16, 2, 1024)
+except: pass
+
 from settings import game_settings
 from asset_loader import init_asset_loader, AssetLoader
 from asset_editor import AssetEditor
@@ -21,6 +29,7 @@ from src.ai_player import TetrisBot
 from src.luigi_generator import generate_luigi_sprites
 from src.bonus_level import BonusLevel
 from src.scene_dark_world import Scene_DarkWorld
+from src.scene_intro import IntroScene
 
 
 # --- Game Configuration ---
@@ -35,9 +44,12 @@ C_BLACK = (10, 10, 10)
 C_DARK_BLUE = (20, 20, 40)
 C_GRID_BG = (30, 30, 50)
 C_NEON_PINK = (255, 20, 147)
+C_NEON_BLUE = (100, 200, 255)
 C_WHITE = (240, 240, 240)
 C_RED = (255, 50, 50)
 C_GREEN = (50, 255, 50)
+C_GOLD = (255, 215, 0)
+C_ORANGE = (255, 100, 30)
 C_GHOST = (128, 128, 128, 100) 
 
 # --- Levels ---
@@ -316,6 +328,8 @@ class Turtle:
         self.is_golden = is_golden
         self.enemy_type = enemy_type if enemy_type else self.ENEMY_TYPE
         self.tetris = tetris
+        self.vx = 0
+        self.vy = self.speed # Initial fall speed
         
         # Frame Loading Logic
         raw_frames = self.get_frames()
@@ -372,23 +386,12 @@ class Turtle:
         anim_speed = self.animation_speed
         
         if self.state == 'dying': 
-            # ALWAYS use green shell for the hit animation as requested
-            # Safe access to tetris reference
-            game = getattr(self, 'tetris', None)
-            frames = []
-            
-            if game and hasattr(game, 'sprite_manager'):
-                try:
-                    frames = game.sprite_manager.get_animation_frames('koopa_green', prefix='shell', scale_factor=2.5)
-                except:
-                    frames = []
-            
-            # Fallback to local shell_frames if search fails, but try to avoid it
-            if not frames: 
-                frames = self.shell_frames
+            # Use specific shell frames for the spin
+            frames = self.shell_frames_left if self.direction == -1 else self.shell_frames_right
+            if not frames: frames = self.shell_frames
             
             # Spin is fast
-            anim_speed = 50 
+            anim_speed = 60 # 60ms between frames
             
         elif self.state == 'flying':
             frames = self.fly_frames_right if self.direction == 1 else self.fly_frames_left
@@ -405,27 +408,52 @@ class Turtle:
         ix, iy = int(self.x + 0.5), int(self.y + 0.5)
         if 0 <= ix < GRID_WIDTH and 0 <= iy < GRID_HEIGHT:
             if game_grid.grid[iy][ix] is not None:
-                # SQUISH!
-                self.state = 'dead' # Instantly gone, no shell animation
-                
-                # Try to access sound manager via a global or by passing game reference?
-                # The method signature is update_movement(self, delta_time, game_grid).
-                # game_grid doesn't have the sound manager usually.
-                # However, this method is called from Tetris.update().
-                # We should probably return a specialized status or handle it there.
-                # BUT, for quick fix if we assume we can't change signature easily everywhere:
-                # We can return 'SQUISH' instead of False?
-                # Actually, main.py loop iterates t.update_movement.
-                # Let's check calls site.
-                return 'SQUISHED'
+                # If they are at the very bottom, let them "jump out" to be fair
+                if iy >= GRID_HEIGHT - 2 and not hasattr(self, 'jump_lock'):
+                    self.state = 'active'
+                    self.vy = -12.0 # REAL jump up!
+                    self.jump_lock = True
+                else:
+                    # SQUISH!
+                    self.state = 'dead' 
+                    if game_grid.tetris:
+                        game_grid.tetris.spawn_particles(PLAYFIELD_X + self.x * BLOCK_SIZE, 
+                                                       PLAYFIELD_Y + self.y * BLOCK_SIZE, 
+                                                       (255, 255, 255), count=5)
+                    return 'SQUISHED'
         if self.state == 'dying':
             self.dying_timer += delta_time
-            self.y += 10 * delta_time
-            return self.dying_timer > 2.0 # Longer death for shell spin visibility
+            
+            # Simple shake effect - no arc needed
+            self.shake_offset_x = random.uniform(-0.15, 0.15)
+            self.shake_offset_y = random.uniform(-0.1, 0.1)
+            
+            # Quick death - 0.4 seconds
+            return self.dying_timer > 0.4
 
         if self.state == 'falling_out':
             self.y += 10 * delta_time 
             return self.y > GRID_HEIGHT + 2
+        
+        # THROWN state - arc trajectory (used by Lakitu's Spinies)
+        if self.state == 'thrown':
+            self.x += getattr(self, 'vx', 0) * delta_time
+            self.y += self.vy * delta_time
+            self.vy += 20.0 * delta_time  # Gravity
+            
+            # Land on floor or blocks
+            if self.y >= GRID_HEIGHT - 1:
+                self.y = GRID_HEIGHT - 1
+                self.state = 'landed'
+                self.vy = 0
+                self.vx = 0
+            elif int(self.y + 1) < GRID_HEIGHT and int(self.x) >= 0 and int(self.x) < GRID_WIDTH:
+                if game_grid.grid[int(self.y + 1)][int(self.x)] is not None:
+                    self.y = int(self.y)
+                    self.state = 'landed'
+                    self.vy = 0
+                    self.vx = 0
+            return False
 
         if self.state == 'flying':
              # Flying Logic (Horizontal with slight descent or hover)
@@ -449,34 +477,55 @@ class Turtle:
                      break
              
              if collision:
-                 self.state = 'active'
-                 # Try to snap up if we hit floor/block from top, or just separate
-                 self.y = int(self.y)
+                  self.state = 'active'
+                  self.vy = self.speed  # Start falling with gravity
+                  # Pop up slightly to avoid being stuck in the block
+                  self.y = max(0, int(self.y) - 0.1)
              return False
 
         if self.state == 'active':
-            self.y += self.speed * delta_time
+            # Use velocity and gravity
+            self.y += self.vy * delta_time
+            self.vy += 25.0 * delta_time # Standard Gravity
+            
+            # Handle horizontal velocity (for thrown enemies like Spinies)
+            if hasattr(self, 'vx') and self.vx != 0:
+                self.x += self.vx * delta_time
+                self.vx *= 0.98  # Friction to slow down
+                if abs(self.vx) < 0.1: self.vx = 0
+            
             landed_y = int(self.y + 1)
             landed_x = int(self.x)
             
             # 1. Land on floor (Bottom of grid)
             if landed_y >= GRID_HEIGHT:
+                # Play landing sound based on fall speed
+                if hasattr(self, 'tetris') and self.tetris:
+                    if self.vy > 8:  # Fast fall = long drop
+                        self.tetris.sound_manager.play('impact_heavy')
+                    else:  # Short fall
+                        self.tetris.sound_manager.play('enemy_land')
                 self.y = GRID_HEIGHT - 1
+                self.vy = 0
                 self.state = 'landed'
                 self.move_timer = 0
-                self.landed_timer = 0 # RESET timer!
+                self.landed_timer = 0
                 return False
                 
             # 2. Land on blocks (Check CENTER of turtle for reliable landing)
             check_x = int(self.x + 0.5)
-            if 0 <= check_x < GRID_WIDTH and 0 <= landed_y < GRID_HEIGHT and game_grid.grid[landed_y][check_x] is not None:
+            if self.vy >= 0 and 0 <= check_x < GRID_WIDTH and 0 <= landed_y < GRID_HEIGHT and game_grid.grid[landed_y][check_x] is not None:
+                # Play landing sound based on fall speed
+                if hasattr(self, 'tetris') and self.tetris:
+                    if self.vy > 8:  # Fast fall = long drop
+                        self.tetris.sound_manager.play('impact_heavy')
+                    else:  # Short fall
+                        self.tetris.sound_manager.play('enemy_land')
                 self.y = landed_y - 1 
+                self.vy = 0
                 self.state = 'landed'
                 self.move_timer = 0
-                self.landed_timer = 0 # RESET timer!
-                return False 
-                self.state = 'landed'
-                self.move_timer = 0
+                self.landed_timer = 0
                 return False
             
             # If we fall past the screen entirely
@@ -549,6 +598,11 @@ class Turtle:
             px = PLAYFIELD_X + self.x * BLOCK_SIZE
             py = PLAYFIELD_Y + self.y * BLOCK_SIZE
             
+            # Apply shake offset when dying
+            if self.state == 'dying':
+                px += getattr(self, 'shake_offset_x', 0) * BLOCK_SIZE
+                py += getattr(self, 'shake_offset_y', 0) * BLOCK_SIZE
+            
             if scale != 1.0:
                  offset = (scale - 1.0) * BLOCK_SIZE
                  px -= offset / 2
@@ -559,6 +613,17 @@ class Turtle:
     def handle_stomp(self, game):
         game.sound_manager.play('stomp')
         self.state = 'dying'
+        self.dying_timer = 0
+        
+        # Spawn particles for visual feedback
+        game.spawn_particles(PLAYFIELD_X + self.x * BLOCK_SIZE, 
+                           PLAYFIELD_Y + self.y * BLOCK_SIZE, 
+                           (255, 255, 255), count=12)
+        
+        # Also add a popup as backup visual
+        game.popups.append(PopupText(PLAYFIELD_X + self.x * BLOCK_SIZE, 
+                                    PLAYFIELD_Y + self.y * BLOCK_SIZE, 
+                                    "STOMP!", (255, 200, 0)))
         
         score = 500
         if self.is_golden:
@@ -575,6 +640,10 @@ class Turtle:
              score *= 5
         return score
 
+    def update(self, delta_time, game_grid):
+        self.update_animation()
+        return self.update_movement(delta_time, game_grid)
+
 class RedTurtle(Turtle): 
     ENEMY_TYPE = 'red'
     def __init__(self, **kwargs):
@@ -582,10 +651,84 @@ class RedTurtle(Turtle):
         self.state = 'flying' # Start flying
 class Spiny(Turtle):
     ENEMY_TYPE = 'spiny'
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Ensure we have proper shell frames (use walk frames as fallback)
+        if not self.shell_frames:
+            self.shell_frames = self.walk_frames[:] if self.walk_frames else []
+            self.shell_frames_left = self.walk_frames_left[:] if self.walk_frames_left else []
+            self.shell_frames_right = self.walk_frames_right[:] if self.walk_frames_right else []
+            
     def handle_stomp(self, game):
         # In Tetris mode, crushing a Spiny with a block should just kill it normally
         # No damage to player!
         return super().handle_stomp(game)
+
+class Hammer:
+    def __init__(self, x, y, dx, dy, sprite_manager):
+        self.x = x
+        self.y = y
+        self.vx = dx * 5.0
+        self.vy = dy * -8.0  # Initial jump up
+        self.sprite_manager = sprite_manager
+        self.timer = 0
+        self.angle = 0
+        self.sprite = sprite_manager.get_sprite('hammer', 'default', scale_factor=2.0)
+        
+    def update(self, dt):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.vy += 25.0 * dt # Gravity
+        self.angle += 360 * dt * 2 # Spin
+        
+    def draw(self, surface):
+        if self.sprite:
+            px = PLAYFIELD_X + self.x * BLOCK_SIZE
+            py = PLAYFIELD_Y + self.y * BLOCK_SIZE
+            rot_img = pygame.transform.rotate(self.sprite, self.angle)
+            surface.blit(rot_img, rot_img.get_rect(center=(px, py)))
+
+class HammerBro(Turtle):
+    ENEMY_TYPE = 'hammerbro'
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.throw_timer = 2.0
+        self.jump_timer = 3.0
+        self.speed = 1.0
+        self.y = GRID_HEIGHT - 1
+        self.state = 'landed'
+        self.vy = 0
+        
+    def update_movement(self, dt, grid):
+        # Walk back and forth in a small area
+        self.x += self.direction * self.speed * dt
+        if self.x < 0: self.direction = 1
+        elif self.x > GRID_WIDTH - 1: self.direction = -1
+        
+        # Jumping logic
+        self.jump_timer -= dt
+        if self.jump_timer <= 0:
+            self.jump_timer = 3.0 + random.random() * 2
+            self.vy = -12.0 # Big jump
+            self.state = 'jumping'
+            
+        if self.state == 'jumping':
+            self.y += self.vy * dt
+            self.vy += 30 * dt # Gravity
+            if self.y >= GRID_HEIGHT - 1:
+                self.y = GRID_HEIGHT - 1
+                self.state = 'landed'
+                self.vy = 0
+                
+        # Throwing logic
+        self.throw_timer -= dt
+        if self.throw_timer <= 0:
+            self.throw_timer = 2.5
+            # Spawn Hammer
+            if self.tetris:
+                h = Hammer(self.x, self.y, self.direction, 1.0, self.tetris.sprite_manager)
+                self.tetris.effects.append(h)
+        return False
 
 class Blooper(Turtle):
     ENEMY_TYPE = 'blooper'
@@ -620,10 +763,6 @@ class Piranha(Turtle):
     ENEMY_TYPE = 'piranha'
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Find a block to "sit" on or just hover near center
-        self.y = random.randint(5, GRID_HEIGHT-5)
-        self.speed = 1.0
-        self.base_y = self.y
         self.offset = 0
         
     def update_movement(self, dt, grid):
@@ -699,7 +838,20 @@ class MagicMushroom(Turtle):
         self.shell_frames_right = []
         
     def handle_stomp(self, game):
+        if self.state == 'dying': return 0
         self.state = 'dying'
+        
+        # ARC INITIALIZATION: Start exactly where we are
+        self.dying_timer = 0
+        self.dying_vx = random.choice([-6.0, 6.0])
+        self.dying_vy = -8.0 
+        
+        # Visual Juice: Smoke Poof
+        if game:
+            game.spawn_particles(PLAYFIELD_X + self.x * BLOCK_SIZE, 
+                               PLAYFIELD_Y + self.y * BLOCK_SIZE, 
+                               (255, 255, 255), count=10)
+        
         if self.m_type == 'poison':
             game.lives -= 1
             game.sound_manager.play('lifelost')
@@ -709,10 +861,11 @@ class MagicMushroom(Turtle):
             if hasattr(game, 'trigger_mega_mode'): game.trigger_mega_mode(20.0)
             return 1000
         else:
-             # Life
+             # Life - Verify it works!
              game.lives = min(game.lives + 1, 5)
              game.sound_manager.play('life')
-             game.popups.append(PopupText(PLAYFIELD_X + self.x*BLOCK_SIZE, PLAYFIELD_Y + self.y*BLOCK_SIZE, "1UP!", C_GREEN))
+             game.popups.append(PopupText(PLAYFIELD_X + self.x*BLOCK_SIZE, PLAYFIELD_Y + self.y*BLOCK_SIZE, "1UP! +1 LIFE", C_GREEN))
+             print(f"[BONUS] 1UP Awarded! Current Lives: {game.lives}")
              return 1000
         
     def get_frames(self):
@@ -1411,67 +1564,204 @@ class Lakitu(Turtle):
         self.state = 'active'
         self.hover_offset = 0
         
-        # Load sprites
-        self.cloud_sprite = tetris_ref.sprite_manager.get_cloud_image((32, 24))
-        # FIXED: Access 'walk' key since it's now a dict
-        self.koopa_sprite = None
-        if hasattr(tetris_ref, 'TURTLE_FRAMES') and isinstance(tetris_ref.TURTLE_FRAMES, dict):
-             w_frames = tetris_ref.TURTLE_FRAMES.get('walk', [])
-             if w_frames: self.koopa_sprite = w_frames[0]
-        
-        if not self.koopa_sprite:
-            # Absolute fallback
-            self.koopa_sprite = tetris_ref.sprite_manager.get_sprite('koopa_green', 'walk_1', scale_factor=2.5)
+        # Load sprites - Make Lakitu bigger (was 2.0)
+        self.sprite_default = tetris_ref.sprite_manager.get_sprite('lakitu', 'default', scale_factor=3.5)
+        self.sprite_throw = tetris_ref.sprite_manager.get_sprite('lakitu', 'throw', scale_factor=3.5)
+        self.is_throwing = False
+        self.pending_spinies = []  # Queue to avoid modifying turtles during iteration
         
     def update(self, dt):
         self.hover_offset += dt * 5
         self.y = 1 + math.sin(self.hover_offset) * 0.5
         
-        self.x += self.speed * dt * self.direction
-        if self.x > GRID_WIDTH - 2:
-            self.direction = -1
-        elif self.x < 0:
-            self.direction = 1
+        # Chase the player x slightly
+        target_x = self.x
+        if self.tetris and self.tetris.current_piece:
+            target_x = self.tetris.current_piece.x
+        
+        if self.x < target_x: self.x += self.speed * dt * 0.5
+        elif self.x > target_x: self.x -= self.speed * dt * 0.5
             
         self.throw_timer += dt
-        if self.throw_timer > 5.0:
+        if self.throw_timer > 4.0:
+            # THROW ANIMATION pulse
             self.throw_timer = 0
-            if random.random() < 0.5:
-                # Throw Spiny
-                if self.tetris:
-                    try:
-                        s = Spiny(tetris=self.tetris)
-                        s.x = max(0, min(GRID_WIDTH-1, int(self.x)))
-                        s.y = 2.0 # Thrown slightly lower to avoid spawn collision
-                        s.state = 'active'
-                        self.tetris.turtles.append(s)
-                        self.tetris.popups.append(PopupText(PLAYFIELD_X + self.x*BLOCK_SIZE, PLAYFIELD_Y + self.y*BLOCK_SIZE, "SPINY!", C_RED))
-                    except Exception as e:
-                        print(f"Lakitu Spiny spawn error: {e}")
-            else:
-                # Flip Gravity
-                # Spawn Star instead of Antigravity
-                if self.tetris:
-                     self.tetris.spawn_magic_star(self.x, self.y)
-                     # Play sound
-                     if self.tetris.sound_manager: self.tetris.sound_manager.play('powerup_appears')
+            self.is_throwing = True
+            
+            if self.tetris:
+                try:
+                    # Queue Spiny spawn - don't add directly to avoid iteration issues
+                    s = Spiny(tetris=self.tetris)
+                    s.x = self.x
+                    s.y = self.y + 1
+                    s.state = 'thrown'  # Special state for arc movement
+                    s.vy = -5.0 # Pop up slightly
+                    s.vx = max(-3, min(3, (target_x - self.x)))  # Reduced momentum
+                    self.pending_spinies.append(s)
+                    self.tetris.popups.append(PopupText(PLAYFIELD_X + self.x*BLOCK_SIZE, PLAYFIELD_Y + self.y*BLOCK_SIZE, "SPINY!", C_RED))
+                except Exception as e:
+                    print(f"Lakitu Spiny spawn error: {e}")
+        
+        if self.is_throwing and self.throw_timer > 0.5:
+            self.is_throwing = False
+            
+        # Flush pending spinies to the main turtle list (safe, after Lakitu's update)
+        if self.pending_spinies and self.tetris:
+            for s in self.pending_spinies:
+                self.tetris.turtles.append(s)
+            self.pending_spinies.clear()
 
     def draw(self, surface):
         px = PLAYFIELD_X + self.x * BLOCK_SIZE
         py = PLAYFIELD_Y + self.y * BLOCK_SIZE
         
-        # Draw Cloud
-        if self.cloud_sprite:
-            surface.blit(self.cloud_sprite, (px - 4, py + 8))
+        img = self.sprite_throw if self.is_throwing else self.sprite_default
+        if img:
+            surface.blit(img, (px, py))
         else:
-             pygame.draw.rect(surface, (200, 200, 200), (px, py+8, 32, 16))
-             
-        # Draw Koopa riding
-        if self.koopa_sprite:
-             # Draw full for now, shifted up
-             surface.blit(self.koopa_sprite, (px, py - 6))
+             pygame.draw.rect(surface, (200, 200, 200), (px, py, 32, 24))
+
+
+class BossFireball:
+    def __init__(self, x, y, sprite_manager):
+        self.x = x
+        self.y = y
+        self.vy = -4.0  # Slower fireballs (was -6)
+        self.sprite_manager = sprite_manager
+        self.width = 1.0
+        self.height = 1.0
+        self.timer = 0
+        
+    def update(self, dt):
+        self.y += self.vy * dt
+        self.timer += dt
+        
+    def draw(self, surface):
+        px = PLAYFIELD_X + (self.x - 0.5) * BLOCK_SIZE
+        py = PLAYFIELD_Y + (self.y - 0.5) * BLOCK_SIZE
+        # Use fireball animation or fallback
+        frames = self.sprite_manager.get_animation_frames('bowser', prefix='fire')
+        if not frames:
+            pygame.draw.circle(surface, (255, 100, 0), (int(px + BLOCK_SIZE//2), int(py + BLOCK_SIZE//2)), 12)
         else:
-             pygame.draw.rect(surface, (0, 255, 0), (px + 4, py - 6, 16, 16))
+            idx = int(self.timer * 10) % len(frames)
+            surface.blit(frames[idx], (px, py))
+
+class BigBoss:
+    def __init__(self, tetris_ref):
+        self.tetris = tetris_ref
+        self.x = GRID_WIDTH // 2 - 1.5
+        self.y = GRID_HEIGHT - 1.0
+        self.width = 3.0
+        self.height = 3.0
+        self.speed = 2.0
+        self.direction = 1
+        self.hp = 100
+        self.max_hp = 100
+        self.hit_timer = 0
+        
+        # Load Bowser Animation from spritesheet
+        self.frames = tetris_ref.sprite_manager.get_animation_frames('bowser', scale_factor=3.0, prefix='walk')
+        if not self.frames:
+            # Fallback to big turtle if bowser missing in assets.json
+            self.frames = tetris_ref.sprite_manager.get_animation_frames('koopa_red', scale_factor=6.0, prefix='walk')
+            
+        self.frame_index = 0
+        self.anim_timer = 0
+        self.attack_timer = 5.0
+        self.fireballs = []
+        
+    def update(self, dt):
+        # Move back and forth
+        # Speed up as HP drops
+        health_pct = max(0.2, self.hp / self.max_hp)
+        current_speed = self.speed * (1.0 + (1.0 - health_pct) * 2.0)
+        self.x += self.direction * current_speed * dt
+        
+        # Boundary check
+        if self.x < 0:
+            self.x = 0
+            self.direction = 1
+        elif self.x > GRID_WIDTH - self.width:
+            self.x = GRID_WIDTH - self.width
+            self.direction = -1
+            
+        # Animation
+        self.anim_timer += dt
+        if self.anim_timer > 0.15:
+            self.anim_timer = 0
+            if self.frames:
+                self.frame_index = (self.frame_index + 1) % len(self.frames)
+            
+        if self.hit_timer > 0:
+            self.hit_timer -= dt
+            
+        # Attack Logic - More forgiving
+        self.attack_timer -= dt
+        if self.attack_timer <= 0:
+            # SHOOT FIREBALL
+            self.attack_timer = 6.0 * health_pct + 2.5 # Slower attacks, more time to react
+            fb = BossFireball(self.x + 1.5, self.y - 2.0, self.tetris.sprite_manager)
+            self.fireballs.append(fb)
+            self.tetris.sound_manager.play('fireball')
+            
+        # Update Fireballs
+        for fb in self.fireballs[:]:
+            fb.update(dt)
+            if fb.y < -2:
+                 self.fireballs.remove(fb)
+                 
+            # Hit check with current piece
+            if self.tetris.current_piece:
+                p = self.tetris.current_piece
+                for bx, by in p.blocks:
+                    gx, gy = p.x + bx, p.y + by
+                    if abs(gx - fb.x) < 1.0 and abs(gy - fb.y) < 1.0:
+                         # Hit! - Break the piece or add garbage?
+                         # For now, just cancel the piece and add a penalty
+                         self.tetris.sound_manager.play('damage')
+                         self.tetris.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "PIECE DESTROYED!", C_RED))
+                         self.tetris.current_piece = self.tetris.next_piece
+                         self.tetris.next_piece = self.tetris.spawner.get_next_piece()
+                         if fb in self.fireballs: self.fireballs.remove(fb)
+                         break
+            
+    def draw(self, surface):
+        px = PLAYFIELD_X + self.x * BLOCK_SIZE
+        # Boss is at the bottom of the grid
+        py = PLAYFIELD_Y + (self.y - 2.5) * BLOCK_SIZE
+        
+        if not self.frames:
+            # Fallback rect
+            color = (255, 100, 100) if self.hit_timer > 0 else (200, 0, 0)
+            rect = (px, py, self.width * BLOCK_SIZE, self.height * BLOCK_SIZE)
+            pygame.draw.rect(surface, color, rect)
+        else:
+            img = self.frames[self.frame_index]
+            if self.direction < 0:
+                img = pygame.transform.flip(img, True, False)
+                
+            if self.hit_timer > 0:
+                # Flash effect
+                mask = pygame.mask.from_surface(img)
+                flash_surf = mask.to_surface(setcolor=(255, 255, 255, 200), unsetcolor=(0, 0, 0, 0))
+                surface.blit(img, (px, py))
+                surface.blit(flash_surf, (px, py), special_flags=pygame.BLEND_RGBA_ADD)
+            else:
+                surface.blit(img, (px, py))
+
+        # Draw Fireballs
+        for fb in self.fireballs:
+            fb.draw(surface)
+        
+        # Draw HP bar
+        hp_bar_width = self.width * BLOCK_SIZE
+        hp_rect = (px, py - 20, hp_bar_width, 8)
+        pygame.draw.rect(surface, (50, 0, 0), hp_rect) # BG
+        if self.hp > 0:
+            curr_hp_width = (self.hp / self.max_hp) * hp_bar_width
+            pygame.draw.rect(surface, (255, 0, 0), (px, py - 20, curr_hp_width, 8))
+        pygame.draw.rect(surface, (255, 255, 255), hp_rect, 1) # Border
 
 
 
@@ -1728,24 +2018,30 @@ class Grid:
             screen.blit(target_surf, (PLAYFIELD_X, PLAYFIELD_Y))
 
 class SoundManager:
+    """
+    Rethought SoundManager for high stability.
+    Uses dedicated channels instead of mixer.music singleton to prevent double-playback.
+    """
     def __init__(self):
         self.sounds = {}
-        self.chan_neon = None
-        self.chan_shadow = None
-        self.music_neon = None
-        self.music_shadow = None
-        
-        # Initialize ALL defaults first to prevent AttributeErrors if mixer fails
-        self.current_vol_neon = 0.5
-        self.current_vol_shadow = 0.0
-        self.target_world = 'NEON'
-        self.master_volume = 0.3
+        self.music_channel = None
+        self.current_track_name = None
+        self.master_volume = 0.7  # Standard background music level
+        self.muted = False
         self.manual_stop = False
-        self.muted = False  # Start with music ON 
-        self._current_track = ''
-        self.music_lock_timestamp = 0 # Prevent rapid double-starts
         
-        # Gameplay playlist - All available tracks for variety!
+        # Audio System Setup
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.pre_init(44100, -16, 2, 1024)
+                pygame.mixer.init()
+            pygame.mixer.set_num_channels(32)
+            # Reserve Channel 0 for Music
+            self.music_channel = pygame.mixer.Channel(0)
+        except Exception as e:
+            print(f"[SoundManager] Mixer setup failed: {e}")
+
+        # Playlists
         self.neon_playlist = [
             '2. Bring The Noise.mp3',
             '01. The James Bond Theme.mp3',
@@ -1756,245 +2052,161 @@ class SoundManager:
             '02. undergroundtheme.mp3'
         ]
         self.neon_track_index = 0
+        self.current_mode = 'intro'
         
-        self.current_mode = 'gameplay'  # Default to gameplay mode
+        # Pre-load sounds via asset_loader logic
+        self._load_sfx()
+
+    def _load_sfx(self):
+        sfx_files = {
+            'rotate': 'rotate.wav',
+            'lock': 'lock.wav',
+            'clear': 'clear.wav',
+            'stomp': 'stomp.wav',  # Single stomp
+            'stomp_combo': 'impactGeneric_light_003.ogg',  # 2x stomp combo
+            'enemy_land': 'impactGeneric_light_002.ogg',  # Enemy lands
+            'enemy_spawn': 'impactGeneric_light_004.ogg',  # Enemy spawns/appears
+            'impact_heavy': 'impactBell_heavy_004.ogg',  # Heavy impact (boss hit, etc)
+            'life': 'life.wav',
+            'damage': 'stomp.wav',
+            'gameover': 'gameover.wav',
+            'move': 'move.wav',  # Now distinct from rotate
+            'coin': 'life.wav',
+            'level_up': 'life.wav',
+            'drop': 'lock.wav',
+            'fireball': 'rotate.wav'
+        }
+        for name, fname in sfx_files.items():
+            p = self._get_path(fname)
+            if os.path.exists(p):
+                try: self.sounds[name] = pygame.mixer.Sound(p)
+                except: pass
         
-        try: # Look for best intro track immediately
-            p_jazz = self._get_path('02. undergroundtheme.mp3')
-            if os.path.exists(p_jazz):
-                self.intro_track = '02. undergroundtheme.mp3'
-            
-            pygame.mixer.init()
-            pygame.mixer.set_num_channels(24) 
-            pygame.mixer.set_num_channels(24) 
-            # pygame.mixer.set_reserved(0) # No reserved channels needed
-            
-            # Create channels early
-            # self.chan_neon = pygame.mixer.Channel(0)
-            # self.chan_shadow = pygame.mixer.Channel(1)
-            self.chan_neon = None
-            self.chan_shadow = None
-            
-            sfx_files = {
-                'rotate': 'rotate.wav',
-                'lock': 'lock.wav',
-                'clear': 'clear.wav',
-                'stomp': 'success_bell-6776.mp3',  # New sound for stomping enemies!
-                'stomp_fallback': 'stomp.wav',  # Old stomp sound as fallback
-                'life': 'life.wav',
-                'damage': 'damage.wav',
-                'gameover': 'gameover.wav',
-                'move': 'move.wav',
-                'coin': 'coin.wav',
-                'level_up': 'life.wav', # Use life sound as level up
-                'drop': 'move.wav'      # Use move sound for quick-drop feedback
-            }
-            for name, fname in sfx_files.items():
-                path = self._get_path(fname)
-                if os.path.exists(path): 
-                    self.sounds[name] = pygame.mixer.Sound(path)
-                else:
-                    # Fallback for stomp
-                    if name == 'stomp':
-                        p_lock = self._get_path('lock.wav')
-                        if os.path.exists(p_lock): self.sounds[name] = pygame.mixer.Sound(p_lock)
-                    print(f"SFX not found: {fname}")
-            
-            # Dual Music System
-            # self.chan_neon/shadow created above
-            
-            # Dual Mode Tracks Removed (Using Playlist System)
-            self.music_neon = None
-            self.music_shadow = None
-            
-            # Intro Track already set at top
-            pass
-            
-        except Exception as e:
-            print(f"Sound init global error: {e}")
+        # Standard Game Balance Levels
+        if 'enemy_land' in self.sounds:
+            self.sounds['enemy_land'].set_volume(0.6)  # Audible but soft
+        if 'enemy_spawn' in self.sounds:
+            self.sounds['enemy_spawn'].set_volume(0.7)  # Noticeable
+        if 'rotate' in self.sounds:
+            self.sounds['rotate'].set_volume(0.5)  # Standard feedback level
+        if 'move' in self.sounds:
+            self.sounds['move'].set_volume(0.4)  # Slightly quieter than rotate
 
     def _get_path(self, f):
-        p1 = os.path.join('assets', 'sounds', f)
-        p2 = os.path.join('sounds', f)
-        return p1 if os.path.exists(p1) else p2
+        base = globals().get('game_root', os.getcwd())
+        paths = [
+            os.path.join(base, 'assets', 'sounds', f),
+            os.path.join(base, 'sounds', f),
+            os.path.join(base, f)
+        ]
+        for p in paths:
+            if sys.platform == 'emscripten': p = p.replace('\\', '/')
+            if os.path.exists(p): return p
+        return f
 
     def play(self, name):
-        if name in self.sounds:
-            try: 
-                self.sounds[name].play()
-            except Exception as e: 
-                print(f"Sound play error for {name}: {e}")
-        else:
-            print(f"[SoundManager] Sound not loaded: {name}")
+        """Play a standard one-shot SFX"""
+        if self.muted or name not in self.sounds: return
+        try:
+            # Use higher channels for SFX to not cut off music on Ch 0
+            self.sounds[name].set_volume(self.master_volume)
+            self.sounds[name].play()
+        except: pass
 
-    def play_music(self):
-        self.play_music_gameplay()
+    def play_track(self, track_name, force=False):
+        """
+        The GOLD STANDARD music play method.
+        Only reloads if the track is actually different.
+        """
+        if not self.music_channel: return
+        if self.current_track_name == track_name and not force:
+            if self.music_channel.get_busy(): return
+
+        p = self._get_path(track_name)
+        if not os.path.exists(p):
+            print(f"[SoundManager] Music file missing: {p}")
+            return
+
+        print(f"[SoundManager] Switching Music -> {track_name}")
+        try:
+            # Stop existing music immediately
+            self.music_channel.stop()
+            
+            # Load as Sound object forWASMB/Web stability
+            new_sound = pygame.mixer.Sound(p)
+            new_sound.set_volume(0 if self.muted else self.master_volume)
+            
+            # Start fresh on reserved channel
+            self.music_channel.play(new_sound, loops=-1, fade_ms=500)
+            self.current_track_name = track_name
+            self.manual_stop = False
+        except Exception as e:
+            print(f"[SoundManager] PlayTrack Error: {e}")
+
+    def stop_music(self):
+        self.manual_stop = True
+        self.current_track_name = None
+        if self.music_channel:
+            self.music_channel.stop()
+        print("[SoundManager] Music Stopped.")
 
     def play_music_gameplay(self):
-        """Play gameplay music (neon playlist)"""
         self.current_mode = 'gameplay'
-        self.stop_music()
-        if not self.neon_playlist: return
-        
         track = self.neon_playlist[self.neon_track_index]
         self.play_track(track)
 
-
     def next_track(self):
-        """Cycle to next song in gameplay playlist"""
         self.neon_track_index = (self.neon_track_index + 1) % len(self.neon_playlist)
         self.play_music_gameplay()
 
-    def play_track(self, track_name):
-        """Helper to load and play a single track on pygame.mixer.music"""
-        p = self._get_path(track_name)
-        
-        if os.path.exists(p) and self._current_track != track_name:
-            # PREVENT RAPID RELOADS (Fixes web doubling)
-            now = pygame.time.get_ticks()
-            if now - getattr(self, 'music_lock_timestamp', 0) < 1500:
-                print("[SoundManager] Music start locked (too fast)")
-                return
-            self.music_lock_timestamp = now
-
-            # SAFETY FIRST: Ensure everything is stopped before loading new track
-            self.stop_music()
-            try:
-                pygame.mixer.music.load(p)
-                pygame.mixer.music.play(-1)  # Loop
-                
-                # Check mute state and force PAUSE if needed
-                if self.muted:
-                    pygame.mixer.music.set_volume(0)
-                    pygame.mixer.music.pause()
-                else:
-                    pygame.mixer.music.set_volume(self.master_volume)
-                
-                self._current_track = track_name
-                self.manual_stop = False
-                print(f"[{self.current_mode.capitalize()} Music] Playing: {track_name}")
-            except Exception as e:
-                print(f"Error loading music: {e}")
-
-    def stop_music(self):
-        """Stop ALL music - both mixer.music and channels"""
-        try: 
-            # TRIPLE STOP to prevent overlap (web audio bug workaround)
-            # pygame.mixer.music.fadeout(100)  # REMOVED: Fadeout causes issues on web
-            pygame.mixer.music.stop()
-            pygame.mixer.music.stop()  # Call twice for web
-            pygame.mixer.music.unload()
-            pygame.mixer.stop() # NUCLEAR OPTION: Stops all active channels (Sounds)
-        except: pass
-        
-        # Redundant safety
-        if self.chan_neon: self.chan_neon.stop()
-        if self.chan_shadow: self.chan_shadow.stop()
-        self._current_track = ''
-        print("[SoundManager] Music stopped (aggressive)")
-
-    def start_dual_mode(self):
-        """Start gameplay music (uses standard music system, not channels)"""
-        print("[SoundManager] Starting gameplay music...")
-        self.current_mode = 'gameplay'
-        self.stop_music()  # Ensure everything is stopped
-        
-        # Use the standard play_track system for consistency
-        self.neon_track_index = 0
-        track_name = self.neon_playlist[self.neon_track_index]
-        self.play_track(track_name)
-
-    def next_song(self):
-        """Cycle to next song in appropriate playlist"""
-        if self.current_mode == 'intro':
-            # Cycle intro playlist
-            self.intro_track_index = (self.intro_track_index + 1) % len(self.intro_playlist)
-            self.play_music_intro()
-        else:
-            # Cycle gameplay playlist
-            self.neon_track_index = (self.neon_track_index + 1) % len(self.neon_playlist)
-            track_name = self.neon_playlist[self.neon_track_index]
-            self.stop_music()
-            self.play_track(track_name)
-
-    def set_target_world(self, world):
-        self.target_world = world
-        self.play('rotate') 
-        
     def update(self, dt):
-        # Dual mode crossfade logic REMOVED
-        self.update_volumes()
-        
-    def update_volumes(self):
-        vol = 0 if self.muted else self.master_volume
-        
-        # Track mute state change to trigger Pause/Unpause
-        if not hasattr(self, '_prev_muted'):
-            self._prev_muted = False
-            
-        if self.muted != self._prev_muted:
-            self._prev_muted = self.muted
-            try:
-                if self.muted:
-                    print("Muting: Pausing Music")
-                    pygame.mixer.music.pause()
-                else:
-                    print("Unmuting: Resuming Music")
-                    pygame.mixer.music.unpause()
-                    pygame.mixer.music.set_volume(vol)
-            except: pass
-        
-        # Continuously enforce volume (if unmuted)
-        if not self.muted:
-            try: pygame.mixer.music.set_volume(vol)
-            except: pass
-        
-        # Update Channels
-        # Update Channels
-        if self.chan_neon: self.chan_neon.set_volume(0)
-        if self.chan_shadow: self.chan_shadow.set_volume(0)
-        try:
-            # Apply volume to all loaded sounds
-            for s in self.sounds.values():
-                s.set_volume(vol)
-        except: pass
+        """Lightweight maintenance: only handle volume and basic state sync"""
+        if self.muted:
+            if self.music_channel and self.music_channel.get_volume() > 0:
+                self.music_channel.set_volume(0)
+        else:
+            if self.music_channel and self.music_channel.get_volume() != self.master_volume:
+                self.music_channel.set_volume(self.master_volume)
 
     def toggle_mute(self):
         self.muted = not self.muted
-        self.update_volumes()
         return self.muted
 
     def set_volume(self, v):
         self.master_volume = max(0.0, min(1.0, v))
-        self.update_volumes()
-    
+
     def get_track_display_name(self):
-        """Returns a clean, short version of the current track name"""
-        track = self._current_track
-        if not track:
-            return "No Music"
-        
-        # Strip .mp3 extension
-        name = track.replace('.mp3', '')
+        """Returns a clean name for the UI"""
+        track = self.current_track_name or "Muted"
+        name = track.split('/')[-1].split('\\')[-1].replace('.mp3', '')
         
         # Clean up specific tracks
         name_map = {
             '01. The James Bond Theme': 'James Bond',
             '02. undergroundtheme': 'Underground',
-            '2. Bring The Noise': 'Bring The Noise'
+            '2. Bring The Noise': 'Bring The Noise',
+            'intro_theme': 'Intro'
         }
-        
-        return name_map.get(name, name[:20])  # Fallback to first 20 chars
+        return name_map.get(name, name[:20])
+
+    def next_song(self):
+        """Alias for next_track"""
+        self.next_track()
+
+    def play_music_intro(self):
+        """Play the dedicated intro theme"""
+        self.current_mode = 'intro'
+        self.play_track('intro_theme.mp3')
+
+    def play_music(self):
+        """Generic alias for playing gameplay music"""
+        self.play_music_gameplay()
     
     def get_track_position(self):
         """Returns current track number and total tracks"""
         if self.current_mode == 'intro':
-            return (self.intro_track_index + 1, len(self.intro_playlist))
-        elif self.current_mode == 'gameplay':
-            return (self.neon_track_index + 1, len(self.neon_playlist))
-        elif self.current_mode == 'slots':
-            return (self.slot_track_index + 1, len(self.slot_playlist))
-        return (0, 0)
+            return (1, 1) # Intro is single track
+        return (self.neon_track_index + 1, len(self.neon_playlist))
 
     @property
     def volume(self):
@@ -2220,7 +2432,7 @@ class MobileControls:
                 pygame.draw.circle(ripple_surf, color, (radius + 2, radius + 2), radius, 3)
                 surface.blit(ripple_surf, (int(x - radius - 2), int(y - radius - 2)))
     
-    def draw_zone_hints(self, surface, font):
+    def draw_zone_hints(self, surface, font=None):
         """Draw subtle zone indicator lines (call during pause or tutorial)"""
         # Vertical zone dividers
         left_x = int(self.screen_w * self.ZONE_LEFT)
@@ -2228,7 +2440,7 @@ class MobileControls:
         bottom_y = int(self.screen_h * self.ZONE_BOTTOM)
         
         # Dashed lines
-        dash_color = (100, 100, 100, 100)
+        dash_color = (150, 150, 150, 150)
         for y in range(0, self.screen_h, 20):
             pygame.draw.line(surface, dash_color, (left_x, y), (left_x, min(y+10, self.screen_h)), 2)
             pygame.draw.line(surface, dash_color, (right_x, y), (right_x, min(y+10, self.screen_h)), 2)
@@ -2236,16 +2448,28 @@ class MobileControls:
             pygame.draw.line(surface, dash_color, (x, bottom_y), (min(x+10, self.screen_w), bottom_y), 2)
         
         # Zone labels
-        small_font = pygame.font.SysFont('Arial', 14)
+        small_font = font if font else pygame.font.SysFont('Arial', 16, bold=True)
         labels = [
-            ("← LEFT", left_x // 2, self.screen_h // 2),
-            ("ROTATE", (left_x + right_x) // 2, self.screen_h // 2),
-            ("RIGHT →", (right_x + self.screen_w) // 2, self.screen_h // 2),
-            ("↓ DROP", self.screen_w // 2, (bottom_y + self.screen_h) // 2)
+            ("← MOVE", left_x // 2, self.screen_h // 2),
+            ("ROTATE / TAP", (left_x + right_x) // 2, self.screen_h // 2),
+            ("MOVE →", (right_x + self.screen_w) // 2, self.screen_h // 2),
+            ("↓ SOFT DROP ↓", self.screen_w // 2, (bottom_y + self.screen_h) // 2 + 10),
+            ("SWIPE DOWN = HARD DROP", self.screen_w // 2, 80)
         ]
         for text, x, y in labels:
-            txt_surf = small_font.render(text, True, (150, 150, 150))
+            # Shadow
+            s_surf = small_font.render(text, True, (0, 0, 0))
+            surface.blit(s_surf, s_surf.get_rect(center=(x+2, y+2)))
+            # Main
+            txt_surf = small_font.render(text, True, (255, 255, 255))
             surface.blit(txt_surf, txt_surf.get_rect(center=(x, y)))
+
+    def draw_tutorial(self, surface, font=None):
+        """Alias for draw_zone_hints with a dark overlay"""
+        overlay = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+        self.draw_zone_hints(surface, font)
 
 
 # Keep old name for backwards compatibility
@@ -2283,6 +2507,7 @@ class Tetris:
         # Initialize Bonus Level now that loader is ready
         self.bonus_level = BonusLevel(self.sprite_manager)
         self.dark_world = Scene_DarkWorld(self.sprite_manager)
+        self.intro_scene = IntroScene(self.sprite_manager)
         
         # PRODUCTION FIX: Generate Green Luigi Sprites once at startup
         generate_luigi_sprites(self.sprite_manager)
@@ -2375,7 +2600,7 @@ class Tetris:
         self.offset_y = 0
         
         self.reset_game()
-        self.game_state = 'PLAYING'
+        self.game_state = 'INTRO'
         
         # DEFER MUSIC START - Let the main loop handle it after full init
         # This prevents double-audio race conditions
@@ -2461,6 +2686,7 @@ class Tetris:
         self.max_boss_hp = 0
         self.boss_garbage_timer = 0
         self.is_boss_level = False
+        self.big_boss = None
         
         self.falling_hearts = []
         self.popups = []
@@ -2527,11 +2753,16 @@ class Tetris:
             self.lines_required = 8 + (self.world - 1) * 4 + (self.level_in_world - 1) * 2
         
         self.is_boss_level = (self.level_in_world == 4)
+        self.big_boss = None
         if self.is_boss_level:
-            self.max_boss_hp = 10 + self.world * 5
+            self.max_boss_hp = 250 + self.world * 100 # Reduced from 400+w*200 for fairness
             self.boss_hp = self.max_boss_hp
-            self.boss_garbage_timer = 12.0  # Slower start - more time to prepare
-            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS LEVEL!", C_RED))
+            self.big_boss = BigBoss(self)
+            self.big_boss.hp = self.boss_hp
+            self.big_boss.max_hp = self.max_boss_hp
+            self.setup_boss_arena()
+            self.boss_garbage_timer = 15.0  # More time before first garbage
+            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS BATTLE!", C_RED, size='big'))
         
             # self.sound_manager.play('music') # Removed legacy call
         
@@ -2567,11 +2798,54 @@ class Tetris:
         self.theme_bg = theme['bg']
         self.theme_grid = theme['grid']
         self.theme_accent = theme['accent']
+        self.active_world = self.level_theme # Sync active_world for run-loop logic
         
         # Spawn World "Treats" (Decorations)
         self.clouds = [] # Reusing clouds as generic bg elements
         for _ in range(25):
             self.clouds.append(BackgroundElement(self.level_theme))
+
+    def setup_boss_arena(self):
+        """Setup the partially filled line above the boss"""
+        # Clear middle section but keep some blocks at the top if any
+        # Actually reset_level already cleared the grid.
+        
+        # Shield line (partially filled line) above the boss
+        shield_row = random.randint(14, 16)
+        gap_start = random.randint(1, GRID_WIDTH - 3)
+        gaps = [gap_start, gap_start + 1] # 2-wide gap
+        
+        # Draw some bricks with gaps
+        for x in range(GRID_WIDTH):
+            if x not in gaps:
+                # Use a specific color for shield blocks
+                self.grid.grid[shield_row][x] = Block((150, 150, 150), 'brick')
+            
+        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 40, "SHOOT THROUGH THE GAPS!", C_GOLD))
+
+    def damage_boss(self, amount, reason="HIT"):
+        """Centralized damage handler for the boss"""
+        if not self.big_boss: return
+        
+        self.big_boss.hp -= amount
+        self.boss_hp = self.big_boss.hp # Keep in sync for UI
+        self.big_boss.hit_timer = 0.3
+        self.sound_manager.play('impact_heavy')  # Heavy impact sound for boss
+        self.screen_shake_timer = 0.4
+        
+        # Color based on damage
+        color = C_RED if amount < 50 else C_NEON_PINK
+        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 60, f"BOSS {reason}! -{amount}", color, size='med'))
+        
+        # Particles at boss position
+        bx = PLAYFIELD_X + (self.big_boss.x + 1.5) * BLOCK_SIZE
+        by = PLAYFIELD_Y + (self.big_boss.y - 1.5) * BLOCK_SIZE
+        self.spawn_particles(bx, by, color, count=int(amount/2))
+        
+        if self.big_boss.hp <= 0:
+            self.sound_manager.play('world_clear') 
+            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS DEFEATED!", C_GOLD, size='big'))
+            self.trigger_level_win()
 
     def spawn_particles(self, x, y, color, count=10):
         for _ in range(count):
@@ -2603,6 +2877,12 @@ class Tetris:
         self.lines_since_mushroom += cleared
         self.line_flash_timer = 0.3
         self.flash_lines = line_indices
+        
+        # BOSS DAMAGE - Line Clears are super effective!
+        if self.big_boss:
+            dmg_map = {1: 20, 2: 45, 3: 80, 4: 150}
+            dmg = dmg_map.get(cleared, 15 * cleared)
+            self.damage_boss(dmg, "LINE CLEAR")
         
         # Scoring 2.0 (Classic Multipliers)
         self.level = (self.world - 1) * 4 + self.level_in_world
@@ -2647,20 +2927,10 @@ class Tetris:
             self.turtles.append(m)
             self.popups.append(PopupText(PLAYFIELD_X + m.x*BLOCK_SIZE, 150, "MAGIC MUSHROOM!", (100, 255, 100)))
 
-        # Boss Damage
         if self.is_boss_level:
-            dmg = 1
-            if cleared == 4: dmg = 5
             # EXTRA DAMAGE FOR GARBAGE
             if 'BRICK_CLEAR' in events: 
-                dmg += 2
-                self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 100, "BRICK SMASH!", C_ORANGE, size='big'))
-                self.sound_manager.play('damage')
-            self.boss_hp -= dmg
-            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 40, f"HIT! -{dmg} HP", C_RED))
-            if self.boss_hp <= 0:
-                self.boss_hp = 0
-                self.trigger_level_win()
+                self.damage_boss(15, "BRICK SMASH")
         else:
             # Check for level win
             if self.lines_this_level >= self.lines_required:
@@ -2668,7 +2938,11 @@ class Tetris:
         
         # Spawn particles if cleared
         if cleared > 0:
-            self.spawn_particles(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, (255, 215, 0), count=cleared*20)
+            # Spawn particles at line clear locations
+            for row_idx in line_indices:
+                self.spawn_particles(PLAYFIELD_X + (GRID_WIDTH//2)*BLOCK_SIZE, 
+                                   PLAYFIELD_Y + row_idx*BLOCK_SIZE, 
+                                   (255, 215, 0), count=20)
 
     def trigger_level_win(self):
         self.sound_manager.play('world_clear')
@@ -3085,6 +3359,11 @@ class Tetris:
             if hasattr(self, 'ai_bot'):
                  self.ai_bot.active = getattr(self, 'auto_play', False)
                  self.ai_bot.update(dt)
+            if self.game_state == 'INTRO':
+                if hasattr(self, 'intro_scene'):
+                    self.intro_scene.update(dt)
+                return
+
             if self.game_state == 'BONUS':
                  if self.bonus_level:
                      self.bonus_level.update(dt)
@@ -3201,14 +3480,18 @@ class Tetris:
                         if self.grid.check_collision(self.current_piece):
                             self.current_piece.x -= self.das_direction
 
-            # Lakitu Logic - Added extra safety checks to prevent freeze
-            if self.lakitu and hasattr(self.lakitu, 'update'):
+            # Lakitu Logic - ONLY spawn in non-boss levels
+            if self.is_boss_level:
+                # No Lakitu during boss fights! Clear it if it exists
+                if self.lakitu:
+                    self.lakitu = None
+            elif self.lakitu and hasattr(self.lakitu, 'update'):
                 try:
                     self.lakitu.update(dt)
                 except Exception as e:
                     print(f"Lakitu update error: {e}")
                     self.lakitu = None
-            elif self.level >= 3:
+            elif self.level >= 3 and not self.is_boss_level:
                 self.lakitu_timer += dt
                 if self.lakitu_timer > 20: 
                     try:
@@ -3237,12 +3520,12 @@ class Tetris:
                     self.p_wing_active = False
                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "P-WING EXPIRED", C_WHITE))
 
-            # Boss Garbage
+            # Boss Garbage - More forgiving timing
             if getattr(self, 'is_boss_level', False) and self.game_state == 'PLAYING':
                 self.boss_garbage_timer -= dt
                 if self.boss_garbage_timer <= 0:
                     self.trigger_boss_garbage()
-                    self.boss_garbage_timer = 12.0 - min(4.0, self.world * 0.5)  # EASIER: More time
+                    self.boss_garbage_timer = 15.0 - min(3.0, self.world * 0.3)  # Gentler scaling
 
             # Antigravity Logic
             if self.antigravity_active:
@@ -3258,6 +3541,10 @@ class Tetris:
                      self.star_active = False
                      self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "STAR END", C_RED))
 
+            # Update Big Boss
+            if self.big_boss:
+                self.big_boss.update(dt)
+
             # --- PIECE GRAVITY & LOCK DELAY ---
             if self.game_state == 'PLAYING':
                 g_dir = 1
@@ -3271,26 +3558,45 @@ class Tetris:
                     if self.grid.check_collision(self.current_piece):
                         self.current_piece.y -= g_dir
                     else:
+                        # NEW: Check for Big Boss Hit
+                        if self.big_boss:
+                            hit = False
+                            px_g, py_g = int(self.current_piece.x), int(self.current_piece.y)
+                            for bx, by in self.current_piece.blocks:
+                                grid_x, grid_y = px_g + bx, py_g + by
+                                if grid_x >= self.big_boss.x and grid_x < self.big_boss.x + self.big_boss.width:
+                                    if grid_y >= self.big_boss.y - 1.5 and grid_y <= self.big_boss.y + 0.5:
+                                        hit = True; break
+                            if hit:
+                                damage = 20 if self.key_down_held else 10
+                                self.damage_boss(damage, "HIT")
+                                
+                                # Reset piece if it hits the boss
+                                self.current_piece = self.next_piece
+                                self.next_piece = self.spawner.get_next_piece()
+                                return
+
                         # NEW: Check for stomping during regular fall
                         piece_x_grid = int(self.current_piece.x)
                         piece_y_grid = int(self.current_piece.y)
                         for bx, by in self.current_piece.blocks:
                             px, py = piece_x_grid + bx, piece_y_grid + by
                             for t in self.turtles[:]:
-                                # Skip Lakitu - can't stomp it with pieces
+                                # Skip Lakitu and already dying enemies
                                 if hasattr(t, 'enemy_type') and t.enemy_type == 'lakitu':
                                     continue
-                                if int(t.x) == px and int(t.y) == py:
+                                if t.state in ['dying', 'dead', 'falling_out']:
+                                    continue
+                                    
+                                # GENEROUS collision - within 1 cell
+                                if abs(t.x - px) < 1.0 and abs(t.y - py) < 1.0:
                                     if hasattr(t, 'handle_stomp'):
-                                        # Turtles are invincible until they land and timer starts
-                                        if t.state == 'landed':
-                                            t.handle_stomp(self)
-                                            # Play stomp sound!
-                                            self.sound_manager.play('stomp')
-                                            if t.enemy_type in ['magic_mushroom', 'magic_star', 'item']:
-                                                if t in self.turtles: self.turtles.remove(t)
-                                            else:
-                                                self.turtles_stomped += 1
+                                        print(f"[STOMP-FALL] Piece at ({px},{py}) stomped turtle at ({t.x:.1f},{t.y:.1f}) state={t.state}")
+                                        t.handle_stomp(self)
+                                        if t.enemy_type in ['magic_mushroom', 'magic_star', 'item']:
+                                            if t in self.turtles: self.turtles.remove(t)
+                                        else:
+                                            self.turtles_stomped += 1
                 
                 self.current_piece.y += g_dir
                 on_floor = self.grid.check_collision(self.current_piece)
@@ -3322,8 +3628,13 @@ class Tetris:
                     if r < 0.20: t = Blooper(tetris=self)
                     elif r < 0.40: t = RedTurtle(tetris=self)
                     else: t = Turtle(tetris=self)
+                elif self.level == 3:
+                    if r < 0.15: t = HammerBro(tetris=self)
+                    elif r < 0.30: t = Blooper(tetris=self)
+                    else: t = Turtle(tetris=self)
                 else: 
-                    if r < 0.15: t = Blooper(tetris=self)
+                    if r < 0.10: t = HammerBro(tetris=self)
+                    elif r < 0.20: t = Blooper(tetris=self)
                     elif r < 0.30: t = Piranha(tetris=self)
                     elif r < 0.45: t = Spiny(tetris=self)
                     elif r < 0.60: t = RedTurtle(tetris=self)
@@ -3331,40 +3642,66 @@ class Tetris:
                 self.turtles.append(t)
 
             for t in self.turtles[:]:
-                # Skip Lakitu - it's updated separately above
-                if hasattr(t, 'enemy_type') and t.enemy_type == 'lakitu':
-                    continue
+                try:
+                    # Skip Lakitu - it's updated separately above
+                    if hasattr(t, 'enemy_type') and t.enemy_type == 'lakitu':
+                        continue
                     
-                t.update_animation()
-                result = t.update_movement(dt, self.grid)
-                if t.state == 'landed':
-                    piece_grid_x, piece_grid_y = int(self.current_piece.x), int(self.current_piece.y)
-                    for bx, by in self.current_piece.blocks:
-                        if int(t.x + 0.5) == piece_grid_x + bx and int(t.y + 0.5) == piece_grid_y + by:
-                             t.handle_stomp(self)
-                             if t.enemy_type in ['magic_mushroom', 'magic_star']:
-                                 if t in self.turtles: self.turtles.remove(t)
-                             else: 
-                                 self.turtles_stomped += 1
-                                 self.frame_stomps += 1  # Track this frame's stomps
-                             break
-                if result == 'SQUISHED':
-                    self.sound_manager.play('stomp')
-                    self.frame_stomps += 1  # Also count squishes
+                    # Update animation for ALL states    
+                    t.update_animation()
+                    
+                    # Update movement and get result
+                    result = t.update_movement(dt, self.grid)
+                    
+                    # Check for stomping ONLY if enemy is still alive/active
+                    if t.state not in ['dying', 'falling_out', 'dead']:
+                        if self.current_piece:
+                            piece_grid_x, piece_grid_y = int(self.current_piece.x), int(self.current_piece.y)
+                            stomped = False
+                            for bx, by in self.current_piece.blocks:
+                                gx, gy = piece_grid_x + bx, piece_grid_y + by
+                                # Relaxed collision for interaction
+                                if abs(t.x - gx) < 1.0 and abs(t.y - gy) < 1.5:
+                                     t.handle_stomp(self)
+                                     if t.enemy_type in ['magic_mushroom', 'magic_star']:
+                                         if t in self.turtles: self.turtles.remove(t)
+                                     else: 
+                                         self.turtles_stomped += 1
+                                         self.frame_stomps += 1
+                                     stomped = True
+                                     break
+                            if stomped:
+                                continue
+                    
+                    # Handle special results
+                    if result == 'SQUISHED':
+                        self.sound_manager.play('stomp')
+                        self.frame_stomps += 1
+                        if t in self.turtles: self.turtles.remove(t)
+                        continue
+                        
+                    # Remove if update returned True (death animation complete or fell off screen)
+                    if result == True:
+                        if t.state == 'falling_out' and t.enemy_type not in ['magic_mushroom', 'magic_star', 'item']:
+                            # Damage player if enemy escapes off bottom
+                            if not self.star_active:
+                                self.hearts -= 1; self.damage_flash_timer = 0.2; self.screen_shake_timer = 0.3
+                                self.sound_manager.play('damage')
+                                if self.hearts <= 0:
+                                    self.lives -= 1; self.hearts = self.max_hearts
+                                    if self.lives <= 0: self.game_state = 'GAMEOVER'
+                        if t in self.turtles: self.turtles.remove(t)
+                except Exception as e:
+                    print(f"[TURTLE ERROR] {e} - removing turtle")
                     if t in self.turtles: self.turtles.remove(t)
-                    continue
-                if result:
-                     if t.state == 'falling_out' and t.enemy_type not in ['magic_mushroom', 'magic_star', 'item']:
-                        if not self.star_active:
-                            self.hearts -= 1; self.damage_flash_timer = 0.2; self.screen_shake_timer = 0.3
-                            self.sound_manager.play('damage')
-                            if self.hearts <= 0:
-                                self.lives -= 1; self.hearts = self.max_hearts
-                                if self.lives <= 0: self.game_state = 'GAMEOVER'
-                     if t in self.turtles: self.turtles.remove(t)
             
-            # Check for 3+ stomps at once -> Bonus Points! (Slot Machine removed)
-            if self.frame_stomps >= 3:
+            # Check for stomp combos
+            if self.frame_stomps == 2:
+                # 2x stomp combo
+                self.sound_manager.play('stomp_combo')
+                self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "DOUBLE STOMP!", (255, 200, 0)))
+                self.score += 200
+            elif self.frame_stomps >= 3:
                 bonus = self.frame_stomps * 500
                 self.score += bonus
                 self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 50, f"{self.frame_stomps}x STOMP COMBO!", (255, 215, 0)))
@@ -3385,9 +3722,24 @@ class Tetris:
                 if heart['y'] > WINDOW_HEIGHT: self.falling_hearts.remove(heart)
             if self.damage_flash_timer > 0: self.damage_flash_timer -= dt
             for e in self.effects[:]:
-                 e['x'] += e['vx'] * dt; e['y'] += e['vy'] * dt; e['vy'] += 800 * dt
-                 e['life'] -= dt * 1.5
-                 if e['life'] <= 0: self.effects.remove(e)
+                 if isinstance(e, dict):
+                      # Standard particle
+                      e['x'] += e['vx'] * dt; e['y'] += e['vy'] * dt; e['vy'] += 800 * dt
+                      e['life'] -= dt * 1.5
+                      if e['life'] <= 0: self.effects.remove(e)
+                 elif hasattr(e, 'update'):
+                      # Hammer or other object
+                      e.update(dt)
+                      # Collision with CURRENT PIECE
+                      if hasattr(e, 'x') and self.current_piece:
+                          for bx, by in self.current_piece.blocks:
+                              if abs(e.x - (self.current_piece.x + bx)) < 0.8 and abs(e.y - (self.current_piece.y + by)) < 0.8:
+                                  self.sound_manager.play('damage')
+                                  self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BLOCK SMASHED!", C_RED))
+                                  if e in self.effects: self.effects.remove(e)
+                                  break
+                      if hasattr(e, 'y') and e.y > GRID_HEIGHT + 2:
+                          if e in self.effects: self.effects.remove(e)
             
             # Mario Helper System Update
             if self.game_state == 'PLAYING':
@@ -3397,6 +3749,10 @@ class Tetris:
                 # Check if Mario should appear
                 if not self.mario_helper_active and self.check_mario_helper_trigger():
                     self.trigger_mario_helper()
+
+            # Update Sound Manager
+            if hasattr(self, 'sound_manager'):
+                self.sound_manager.update(dt)
 
         except Exception as e:
             self.log_event(f"CRASH IN UPDATE: {e}")
@@ -3473,9 +3829,12 @@ class Tetris:
             t_surf = self.font_small.render("PLAY MARIO TETRIS", True, C_WHITE)
             target.blit(t_surf, t_surf.get_rect(center=tetris_btn_rect.center))
             
-            # BIG "TAP ANYWHERE" text for mobile
-            tap_text = self.font_med.render("TAP ANYWHERE TO START", True, (255, 255, 0))
-            target.blit(tap_text, tap_text.get_rect(center=(cx, cy + 80)))
+            # BIG dynamic "TAP ANYWHERE" text
+            # Add breathing/pulsing effect
+            pulse = math.sin(pygame.time.get_ticks() * 0.005) * 0.5 + 0.5
+            pulse_color = (int(255 * pulse), int(255 * pulse), 0)
+            tap_text = self.font_med.render("PRESS ANYWHERE TO START?", True, pulse_color)
+            target.blit(tap_text, tap_text.get_rect(center=(cx, cy + 100)))
             
             # DIRECT MOUSE POLLING (bypass events for mobile)
             mouse_buttons = pygame.mouse.get_pressed()
@@ -3638,16 +3997,15 @@ class Tetris:
              self.game_surface.blit(txt1, txt1.get_rect(center=(cx, cy-30)))
              self.game_surface.blit(txt_theme, txt_theme.get_rect(center=(cx, cy+25)))
 
-        # Draw Particles
-            for e in self.effects:
-                if isinstance(e, dict) and e.get('type') == 'particle':
-                     alpha = int(255 * e['life'])
-                     s = pygame.Surface((4,4))
-                     s.fill(e['color'])
-                     s.set_alpha(alpha)
-                     self.game_surface.blit(s, (e['x'], e['y']))
-                elif hasattr(e, 'draw'):
-                     e.draw(self.game_surface)
+             for e in self.effects:
+                 if isinstance(e, dict) and e.get('type') == 'particle':
+                      alpha = int(255 * e['life'])
+                      s = pygame.Surface((4,4))
+                      s.fill(e['color'])
+                      s.set_alpha(alpha)
+                      self.game_surface.blit(s, (e['x'], e['y']))
+                 elif hasattr(e, 'draw'):
+                      e.draw(self.game_surface)
 
             # Draw Ghost Piece
             ghost_y = self.current_piece.y
@@ -3703,15 +4061,29 @@ class Tetris:
                 if t.state == 'flying':
                     target_frames = t.fly_frames_right if t.direction == 1 else t.fly_frames_left
                 elif t.state == 'dying':
-                    target_frames = t.shell_frames_right if t.direction == 1 else t.shell_frames_left
+                    # Use walk frames for dying (shell frames often empty)
+                    target_frames = t.walk_frames_right if t.direction == 1 else t.walk_frames_left
                 else:
                     target_frames = t.walk_frames_right if t.direction == 1 else t.walk_frames_left
                 
                 if target_frames and len(target_frames) > 0:
                      img = target_frames[t.current_frame % len(target_frames)]
-                     # FIX: Align feet (bottom of sprite) with the bottom of the grid cell
+                     
+                     # Calculate position
                      px = PLAYFIELD_X + t.x * BLOCK_SIZE
                      py = PLAYFIELD_Y + (t.y + 1) * BLOCK_SIZE - img.get_height()
+                     
+                     # Apply shake when dying
+                     if t.state == 'dying':
+                         shake_x = getattr(t, 'shake_offset_x', 0) * BLOCK_SIZE
+                         shake_y = getattr(t, 'shake_offset_y', 0) * BLOCK_SIZE
+                         px += shake_x
+                         py += shake_y
+                         # Tint red/white flash
+                         flash_surf = img.copy()
+                         flash_surf.fill((255, 100, 100), special_flags=pygame.BLEND_RGB_ADD)
+                         img = flash_surf
+                     
                      self.game_surface.blit(img, (px, py))
                 else:
                     px = PLAYFIELD_X + t.x * BLOCK_SIZE
@@ -3732,6 +4104,10 @@ class Tetris:
                 except Exception as e:
                     print(f"Lakitu draw error: {e}")
                     self.lakitu = None
+
+            # Draw Big Boss
+            if self.big_boss:
+                self.big_boss.draw(self.game_surface)
 
             # HUD (Responsive) - ONLY DRAW DURING PLAYING OR WORLD CLEAR
             if self.game_state in ['PLAYING', 'WORLD_CLEAR']:
@@ -3923,7 +4299,10 @@ class Tetris:
                 pygame.draw.rect(self.game_surface, (40, 40, 60), (bar_x, bar_y, bar_w, bar_h))
                 if self.is_boss_level:
                     fill_pct = max(0, self.boss_hp / self.max_boss_hp)
-                    pygame.draw.rect(self.game_surface, C_RED, (bar_x, bar_y, int(bar_w * fill_pct), bar_h))
+                    pygame.draw.rect(self.game_surface, (255, 0, 0), (bar_x, bar_y, int(bar_w * fill_pct), bar_h))
+                    # Boss Label
+                    lbl = self.font_small.render("BOSS HP", True, C_WHITE)
+                    self.game_surface.blit(lbl, (bar_x, bar_y - 18))
                 else:
                     fill_pct = min(1.0, self.lines_this_level / self.lines_required)
                     pygame.draw.rect(self.game_surface, C_GREEN, (bar_x, bar_y, int(bar_w * fill_pct), bar_h))
@@ -4159,22 +4538,40 @@ class Tetris:
         # Drop until collision
         while not self.grid.check_collision(self.current_piece) and self.current_piece.y < GRID_HEIGHT:
              self.current_piece.y += g_dir
+             
+             # BOSS HIT CHECK - During Hard Drop
+             if self.big_boss:
+                 hit = False
+                 for bx, by in self.current_piece.blocks:
+                     gx, gy = int(self.current_piece.x + bx), int(self.current_piece.y + by)
+                     if gx >= self.big_boss.x and gx < self.big_boss.x + self.big_boss.width:
+                         if gy >= self.big_boss.y - 1.5 and gy <= self.big_boss.y + 0.5:
+                             hit = True; break
+                 if hit:
+                     self.damage_boss(50, "SMASH")
+                     # Consume piece on hit
+                     self.current_piece = self.next_piece
+                     self.next_piece = self.spawner.get_next_piece()
+                     return
+
              # STOMP LOGIC: Check if we hit any turtles on the way down
              for bx, by in self.current_piece.blocks:
                  piece_x = self.current_piece.x + bx
                  piece_y = self.current_piece.y + by
                  for t in self.turtles[:]:
                      if hasattr(t, 'enemy_type') and t.enemy_type == 'lakitu': continue
-                     if int(t.x) == piece_x and int(t.y) == piece_y:
-                          if t.state == 'landed':
-                              self.sound_manager.play('stomp')
-                              if t in self.turtles: 
-                                  self.turtles.remove(t)
-                                  turtles_killed += 1
-                                  self.kills_this_level += 1
-                                  if not hasattr(self, 'turtles_stomped'): self.turtles_stomped = 0
-                                  self.turtles_stomped += 1
-                          # Add visual effect and score ONLY when actually stomped                             self.popups.append(PopupText(piece_x * BLOCK_SIZE + PLAYFIELD_X, piece_y * BLOCK_SIZE + PLAYFIELD_Y, "SMASH!", C_RED))
+                     # Generous collision for Hard Drop
+                     if abs(t.x - piece_x) < 1.0 and abs(t.y - piece_y) < 1.0:
+                          if t.state not in ['dying', 'dead', 'falling_out']:
+                               t.handle_stomp(self)
+                               if t.enemy_type in ['magic_mushroom', 'magic_star', 'item']:
+                                   if t in self.turtles: self.turtles.remove(t)
+                               else: 
+                                   turtles_killed += 1
+                                   
+                                   self.kills_this_level += 1
+                                   if not hasattr(self, 'turtles_stomped'): self.turtles_stomped = 0
+                                   self.turtles_stomped += 1
         
         self.current_piece.y -= g_dir
         
@@ -4212,17 +4609,11 @@ class Tetris:
     async def run(self):
         self.running = True
         
-        # DEFERRED MUSIC START - Only start music once, after full init
-        if not getattr(self, '_music_started', False):
-            self._music_started = True
-            # NUCLEAR STOP first (kill any zombie audio from previous sessions)
-            try:
-                pygame.mixer.music.stop()
-                pygame.mixer.stop()
-            except: pass
-            # Now start the correct track
-            if hasattr(self, 'sound_manager') and self.game_state == 'PLAYING':
-                self.sound_manager.play_music_gameplay()
+        # DEFERRED MUSIC START - Wait for FIRST interaction
+        # Browser policies block audio until the user clicks.
+        # We handle this in the Event loop now.
+        pass
+
         
         while self.running:
             dt = self.clock.tick(60) / 1000.0
@@ -4281,7 +4672,27 @@ class Tetris:
                         if event.key == pygame.K_0:
                              self.auto_play = not getattr(self, 'auto_play', False)
                              state_txt = "ON" if self.auto_play else "OFF"
-                             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"AUTO-PLAY {state_txt}", C_NEON_BLUE))
+                             # Using C_BLUE or similar if NEON_BLUE fails
+                             col = (100, 200, 255)
+                             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"AUTO-PLAY {state_txt}", col))
+
+                        if event.key == pygame.K_n:
+                             self.sound_manager.next_track()
+                             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "NEXT TRACK", (100, 255, 100)))
+
+                        if event.key == pygame.K_m:
+                             self.sound_manager.toggle_mute()
+                             state_txt = "MUTED" if self.sound_manager.muted else "UNMUTED"
+                             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, state_txt, (255, 215, 0)))
+
+                        if event.key == pygame.K_s: # AUDIO DIAGNOSTIC
+                             mixer_init = pygame.mixer.get_init() is not None
+                             music_busy = pygame.mixer.music.get_busy()
+                             sfx_count = len(self.sound_manager.sounds)
+                             msg = f"MIXER: {mixer_init} | BUSY: {music_busy} | SFX: {sfx_count}"
+                             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 40, msg, (100, 200, 255), size='small'))
+                             print(f"--- AUDIO DIAGNOSTIC --- \n{msg}\nTrack: {self.sound_manager._current_track}")
+                             self.sound_manager.play('rotate') # Test SFX
                         
                         if event.key == pygame.K_l:  # Level Skip (Debug)
                              self.level += 1
@@ -4309,7 +4720,18 @@ class Tetris:
             game_time = pygame.time.get_ticks() / 1000.0
             
             if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN) and self.game_state != 'SLOT_MACHINE':
+                # SATISFY BROWSER INTERACTION REQUIREMENT
+                if not getattr(self, '_interaction_triggered', False):
+                    self._interaction_triggered = True
+                    if self.game_state == 'INTRO':
+                        self.sound_manager.play_music_intro()
+                        print("[Audio] First interaction: Starting Intro Music")
+                    else:
+                        self.sound_manager.play_music_gameplay()
+                        print("[Audio] First interaction: Starting Gameplay Music")
+
                 # Get position and map to game coordinates
+
                 if event.type == pygame.FINGERDOWN:
                     sw, sh = self.screen.get_size()
                     real_pos = (int(event.x * sw), int(event.y * sh))
