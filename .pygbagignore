@@ -1,0 +1,47 @@
+# Exclude development and build folders
+.venv/
+.git/
+.firebase/
+.idx/
+__pycache__/
+build/
+docs/
+staging/
+backups/
+guide_assets/
+guide_assets_v2/
+build_clean/
+deploy/
+
+# Exclude tool scripts (not needed in web build)
+*.bat
+analyze_*.py
+check_*.py
+click_*.py
+create_*.py
+find_*.py
+generate_*.py
+inspect_*.py
+labeled_*.py
+launch_*.py
+refactor_*.py
+scan_*.py
+serve_*.py
+sprite_*.py
+upgrade_*.py
+view_*.py
+
+# Exclude development files
+*.txt
+*.md
+*.json
+!assets.json
+!highscore.json
+*.workspace
+*.code-workspace
+
+# Exclude large development assets
+asset_browser.html
+asset_editor.py
+asset_preview.py
+asset_loader.py

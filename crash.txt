@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3842, in <module>
+    asyncio.run(game.run())
+  File "C:\Users\eric\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\eric\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\eric\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 684, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3689, in run
+    self.action_hard_drop()
+  File "C:\Users\eric\React Projects\Mario-Tetris-main\main.py", line 3631, in action_hard_drop
+    cleared, events = self.grid.clear_lines()
+    ^^^^^^^^^^^^^^^
+ValueError: too many values to unpack (expected 2)
