@@ -19,16 +19,21 @@
             justify-content: center;
             align-items: center;
             overflow: hidden;
+            cursor: pointer;
         }
 
         #status {
             margin-bottom: 20px;
             font-weight: bold;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
 
         progress {
             width: 300px;
             height: 20px;
+            border-radius: 10px;
         }
 
         canvas.emscripten {
@@ -40,18 +45,31 @@
             position: absolute;
             top: 0;
             left: 0;
+            pointer-events: none;
         }
 
         #transfer {
             position: relative;
             z-index: 10;
+            text-align: center;
+        }
+
+        .blink {
+            animation: blinker 1.5s linear infinite;
+            color: #0f0;
+        }
+
+        @keyframes blinker {
+            50% {
+                opacity: 0;
+            }
         }
     </style>
 </head>
 
-<body>
+<body onclick="onScreenClick()">
     <div id="transfer">
-        <div id="status">Fetching Mario Tetris...</div>
+        <div id="status">Loading Mario Tetris...</div>
         <progress value="0" max="100" id="progress"></progress>
     </div>
 
@@ -63,10 +81,11 @@ import sys
 import asyncio
 import platform
 import json
+import os
 from pathlib import Path
 
 async def main():
-    # 1. Mount the game package
+    print("--- Loader Start ---")
     apk = "mario-tetris-v113.apk"
     bundle = "mario-tetris"
     appdir = Path(f"/data/data/{bundle}")
@@ -84,7 +103,14 @@ async def main():
     # 2. Wait for download/mount
     while not track.ready:
         await asyncio.sleep(.1)
-
+    
+    print("--- Download Complete ---")
+    
+    # Update UI to tell user to click
+    status_msg = platform.window.document.getElementById("status")
+    status_msg.innerHTML = "TAP TO PLAY"
+    status_msg.className = "blink"
+    
     # 3. Setup Python path
     sys.path.append(appdir.as_posix())
     
@@ -92,10 +118,20 @@ async def main():
     while not platform.window.MM.UME:
         await asyncio.sleep(.1)
 
-    # 5. Launch Game
-    import main
-    game = main.Tetris()
-    await game.run()
+    print("--- Starting Game ---")
+    # Hide the loader
+    platform.window.document.getElementById("transfer").style.display = "none"
+    platform.window.canvas.style.pointerEvents = "auto"
+    
+    try:
+        import main
+        print("Import successful")
+        game = main.Tetris()
+        await game.run()
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
 
 asyncio.run(main())
 # --></script>
@@ -108,6 +144,13 @@ asyncio.run(main())
             ume_block: 1,
             autorun: 1,
             PYBUILD: "3.12"
+        }
+
+        function onScreenClick() {
+            console.log("Screen Clicked - Unlocking Audio");
+            if (window.MM) {
+                window.MM.UME = true;
+            }
         }
     </script>
 </body>

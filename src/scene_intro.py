@@ -362,9 +362,9 @@ class IntroScene:
             actor.draw(surface)
             
         # -- Draw VERSION (Bottom Left) --
-        font = pygame.font.SysFont('Arial', 14)
-        v_txt = font.render("v1.1.3-ZOOM-FIX", True, (255, 255, 255, 120))
-        surface.blit(v_txt, (10, WINDOW_HEIGHT - 20))
+        font = pygame.font.SysFont('Arial', 18, bold=True)
+        v_txt = font.render("v1.1.3-ZOOM-FIX", True, (255, 255, 0)) # Yellow for visibility
+        surface.blit(v_txt, (10, WINDOW_HEIGHT - 30))
             
         # No UI here, handled by Tetris.draw_persistent_ui
 
