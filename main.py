@@ -451,6 +451,7 @@ class Turtle:
         if self.enemy_type == 'cheepcheep': return Tetris.CHEEP_FRAMES
         if self.enemy_type == 'magic_mushroom':
             return [self.tetris.sprite_manager.get_sprite('items', 'mushroom_super', scale_factor=1.5)]
+        if self.enemy_type == 'lakitu': return [] # Lakitu handles its own animation/draw
         return Tetris.TURTLE_FRAMES
 
     def update_animation(self):
@@ -1659,8 +1660,7 @@ class BonusGame:
 
 class Lakitu(Turtle):
     def __init__(self, tetris_ref):
-        self.enemy_type = 'lakitu'  # Set BEFORE super() so Turtle handles frames right
-        super().__init__(tetris=tetris_ref)
+        super().__init__(enemy_type='lakitu', tetris=tetris_ref)
         self.tetris = tetris_ref
         self.y = 1
         self.x = -5
@@ -2784,9 +2784,9 @@ class Tetris:
         sw, sh = self.screen.get_size()
         
         if getattr(self, 'is_mobile', False):
-            # Coordinates are relative to the ZOEMED crop
-            # Zoom area: (400, 50, 480, 740)
-            zoom_x, zoom_y, zoom_w, zoom_h = 400, 50, 480, 740
+            # Coordinates are relative to the ZOOMED crop
+            # Zoom area: (475, 55, 330, 650)
+            zoom_x, zoom_y, zoom_w, zoom_h = 475, 55, 330, 650
             
             # scaling of the zoomed area on screen
             scale_zoom = min(sw / zoom_w, sh / zoom_h)
@@ -4323,13 +4323,12 @@ class Tetris:
             
             # MOBILE ZOOM: If on a narrow/mobile screen, zoom in on the Tetris area
             if getattr(self, 'is_mobile', False):
-                # Focus on center-ish area where playfield + next piece are
-                # Playfield is x=480..800, Next piece is ~850..950
+                # FULL VIEW ZOOM: Focus strictly on the playfield
                 # Source coordinates (virtual 1280x800)
-                zoom_x = 400
-                zoom_y = 50
-                zoom_w = 480 # Covers 400 to 880
-                zoom_h = 740 # Covers most vertical play space
+                zoom_x = 475 # Playfield starts at 480
+                zoom_y = 55  # Playfield starts at 60
+                zoom_w = 330 # Playfield width is 320
+                zoom_h = 650 # Playfield height is 640
                 
                 # Crop the surface
                 cropped_surf = self.game_surface.subsurface((zoom_x, zoom_y, zoom_w, zoom_h))
