@@ -2360,18 +2360,18 @@ class MobileControls:
     """Enhanced mobile touch controls with DAS, zones, and visual feedback"""
     
     # Zone layout (percentages of screen width)
-    ZONE_LEFT = 0.30       # Left 30% = move left
-    ZONE_RIGHT = 0.70      # Right 30% = move right  
-    ZONE_CENTER = (0.30, 0.70)  # Middle 40% = rotate
-    ZONE_BOTTOM = 0.85     # Bottom 15% = soft drop area
+    ZONE_LEFT = 0.35       # Left 35% = move left
+    ZONE_RIGHT = 0.65      # Right 35% = move right  
+    ZONE_CENTER = (0.35, 0.65)  # Middle 30% = rotate
+    ZONE_BOTTOM = 0.80     # Bottom 20% = soft drop area
     
     # DAS (Delayed Auto Shift) settings
-    DAS_DELAY = 0.18       # Initial delay before auto-repeat (seconds)
-    DAS_REPEAT = 0.05      # Speed of auto-repeat (seconds)
+    DAS_DELAY = 0.30       # Longer delay before auto-repeat (seconds)
+    DAS_REPEAT = 0.15      # Slower repeat (seconds)
     
     # Swipe settings
-    SWIPE_THRESHOLD = 40   # Minimum pixels for swipe detection
-    TAP_TIME_MAX = 0.25    # Maximum time for tap (seconds)
+    SWIPE_THRESHOLD = 30   # More sensitive swipes
+    TAP_TIME_MAX = 0.20    # Stricter tap timing to avoid accidental DAS
     
     def __init__(self, screen_dimensions):
         self.screen_w, self.screen_h = screen_dimensions
@@ -2777,7 +2777,29 @@ class Tetris:
         self.offset_y = (sh - (WINDOW_HEIGHT * self.scale)) // 2
         
     def get_game_coords(self, pos):
-        """Convert screen pixels to virtual game pixels (1280x720)"""
+        """Convert screen pixels to virtual game pixels, accounting for mobile zoom."""
+        sw, sh = self.screen.get_size()
+        
+        if getattr(self, 'is_mobile', False):
+            # Coordinates are relative to the ZOEMED crop
+            # Zoom area: (400, 50, 480, 740)
+            zoom_x, zoom_y, zoom_w, zoom_h = 400, 50, 480, 740
+            
+            # scaling of the zoomed area on screen
+            scale_zoom = min(sw / zoom_w, sh / zoom_h)
+            fx = (sw - zoom_w * scale_zoom) // 2
+            fy = (sh - zoom_h * scale_zoom) // 2
+            
+            # Reverse map from screen to crop
+            cx = (pos[0] - fx) / scale_zoom
+            cy = (pos[1] - fy) / scale_zoom
+            
+            # Map from crop to virtual surface
+            gx = zoom_x + cx
+            gy = zoom_y + cy
+            return (gx, gy)
+        
+        # Standard Letterbox View
         gx = (pos[0] - self.offset_x) / self.scale
         gy = (pos[1] - self.offset_y) / self.scale
         return (gx, gy)
@@ -4284,10 +4306,36 @@ class Tetris:
             
             # FINAL SCALING BLIT TO PHYSICAL SCREEN
             self.screen.fill((0, 0, 0)) # Clean margins
-            scaled_surf = pygame.transform.scale(self.game_surface, 
-                                               (int(WINDOW_WIDTH * self.scale), 
-                                                int(WINDOW_HEIGHT * self.scale)))
-            self.screen.blit(scaled_surf, (self.offset_x, self.offset_y))
+            
+            # MOBILE ZOOM: If on a narrow/mobile screen, zoom in on the Tetris area
+            if getattr(self, 'is_mobile', False):
+                # Focus on center-ish area where playfield + next piece are
+                # Playfield is x=480..800, Next piece is ~850..950
+                # Source coordinates (virtual 1280x800)
+                zoom_x = 400
+                zoom_y = 50
+                zoom_w = 480 # Covers 400 to 880
+                zoom_h = 740 # Covers most vertical play space
+                
+                # Crop the surface
+                cropped_surf = self.game_surface.subsurface((zoom_x, zoom_y, zoom_w, zoom_h))
+                
+                # Recalculate scaling for this cropped view to fill the physical screen
+                sw, sh = self.screen.get_size()
+                scale_zoom = min(sw / zoom_w, sh / zoom_h)
+                
+                final_surf = pygame.transform.scale(cropped_surf, 
+                                                  (int(zoom_w * scale_zoom), 
+                                                   int(zoom_h * scale_zoom)))
+                fx = (sw - final_surf.get_width()) // 2
+                fy = (sh - final_surf.get_height()) // 2
+                self.screen.blit(final_surf, (fx, fy))
+            else:
+                # Standard Letterbox View
+                scaled_surf = pygame.transform.scale(self.game_surface, 
+                                                   (int(WINDOW_WIDTH * self.scale), 
+                                                    int(WINDOW_HEIGHT * self.scale)))
+                self.screen.blit(scaled_surf, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
         except Exception as e:
