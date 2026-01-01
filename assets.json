@@ -3,13 +3,7 @@
         "spritesheet": "marioallsprite.png",
         "items": "darkworlditems.png",
         "blocks": "blocks.png",
-        "cloud": "cloud_sprite.png",
-        "cloud_fallback": "cloud_sprite.png",
         "waterworld": "waterworld.png",
-        "bonus_bg": "level_bonus_bg.png",
-        "bonus_ref": "level_reference.png",
-        "tetris": "tetris_sprite.png",
-        "rack": "rack_spritesheet.png",
         "items_coins": "items-coins.png"
     },
     "sounds": {
@@ -446,41 +440,41 @@
                 "h": 36
             },
             "fire_1": {
-                "x": 160,
-                "y": 416,
-                "w": 24,
-                "h": 12
+                "x": 243,
+                "y": 407,
+                "w": 26,
+                "h": 14
             },
             "fire_2": {
                 "x": 200,
-                "y": 416,
-                "w": 24,
-                "h": 12
+                "y": 405,
+                "w": 31,
+                "h": 18
             }
         },
         "hammerbro": {
             "walk_1": {
-                "x": 224,
-                "y": 361,
-                "w": 16,
+                "x": 287,
+                "y": 364,
+                "w": 17,
                 "h": 24
             },
             "walk_2": {
-                "x": 264,
-                "y": 361,
+                "x": 247,
+                "y": 363,
                 "w": 16,
                 "h": 24
             },
             "throw_1": {
-                "x": 304,
-                "y": 361,
-                "w": 16,
-                "h": 24
+                "x": 367,
+                "y": 357,
+                "w": 17,
+                "h": 36
             },
             "throw_2": {
-                "x": 344,
-                "y": 361,
-                "w": 16,
+                "x": 327,
+                "y": 363,
+                "w": 18,
                 "h": 24
             }
         },

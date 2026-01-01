@@ -11,14 +11,17 @@ class BonusLevel:
         
         # Load Background
         try:
-            bg_path = asset_loader.config['images']['bonus_bg']
-            full_path = os.path.join(asset_loader.base_path, bg_path)
-            if os.path.exists(full_path):
-                self.background = pygame.image.load(full_path).convert()
-                self.background = pygame.transform.scale(self.background, (WINDOW_WIDTH, WINDOW_HEIGHT))
-                print(f"[BonusLevel] Background loaded: {bg_path}")
+            bg_path = asset_loader.config.get('images', {}).get('bonus_bg')
+            if bg_path:
+                full_path = os.path.join(asset_loader.base_path, bg_path)
+                if os.path.exists(full_path):
+                    self.background = pygame.image.load(full_path).convert()
+                    self.background = pygame.transform.scale(self.background, (WINDOW_WIDTH, WINDOW_HEIGHT))
+                    print(f"[BonusLevel] Background loaded: {bg_path}")
+                else:
+                    print(f"[BonusLevel] BG Missing: {full_path}")
             else:
-                print(f"[BonusLevel] BG Missing: {full_path}")
+                print(f"[BonusLevel] Background not defined in config")
         except Exception as e:
             print(f"[BonusLevel] Error loading BG: {e}")
             
@@ -41,7 +44,11 @@ class BonusLevel:
         """
         print("[BonusLevel] Scanning reference map...")
         try:
-            ref_path = self.asset_loader.config['images']['bonus_ref']
+            ref_path = self.asset_loader.config.get('images', {}).get('bonus_ref')
+            if not ref_path:
+                print("[BonusLevel] Reference map not defined in config")
+                return
+                
             full_path = os.path.join(self.asset_loader.base_path, ref_path)
             
             if not os.path.exists(full_path):
@@ -84,6 +91,19 @@ class BonusLevel:
             
         except Exception as e:
             print(f"[BonusLevel] Scan failed: {e}")
+            
+        # FALLBACK: Procedural Coins if scan yielded nothing
+        if not self.coins:
+            print("[BonusLevel] No coins found or map missing. Generating procedural layout...")
+            import random
+            for _ in range(25):
+                self.coins.append({
+                    'x': random.randint(50, WINDOW_WIDTH - 50),
+                    'y': random.randint(50, WINDOW_HEIGHT - 100),
+                    'frame': 0,
+                    'anim_timer': 0,
+                    'collected': False
+                })
 
     def update(self, dt):
         # Animate Coins

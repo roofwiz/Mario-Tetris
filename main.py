@@ -23,7 +23,7 @@ except: pass
 
 from settings import game_settings
 from asset_loader import init_asset_loader, AssetLoader
-from asset_editor import AssetEditor
+# from asset_editor import AssetEditor
 from src.config import *
 from src.ai_player import TetrisBot
 from src.luigi_generator import generate_luigi_sprites
@@ -283,16 +283,47 @@ class BackgroundElement:
             self.color = (100, 200, 100, 120)
             self.vy = random.uniform(20, 50) # Leaves fall
             self.size = random.randint(6, 10)
+        elif theme_type == 'SHADOW':
+            self.color = (50, 0, 50, 50) # Dark ghosts
+            self.vy = random.uniform(-10, 10)
+            self.vx = random.uniform(-10, 10)
+            self.size = random.randint(10, 20)
+            self.life = random.random()
+        elif theme_type == 'MIDNIGHT':
+            self.color = (255, 255, 255, 200) # Stars
+            self.vy = random.uniform(2, 5) # Slow drift
+            self.size = random.randint(1, 3)
+            self.twinkle_speed = random.uniform(5, 15)
+        elif theme_type == 'SUNSET':
+            self.color = (255, 200, 100, 100) # Golden motes
+            self.vx = random.uniform(10, 30) # Wind blows right
+            self.vy = random.uniform(-5, 5)
+            self.size = random.randint(2, 6)
         elif theme_type == 'CRYSTAL':
-            self.color = (180, 240, 255, 180)
-            self.vy = random.uniform(5, 15)
-            self.size = random.randint(4, 7)
+             self.color = (180, 240, 255, 180)
+             self.vy = random.uniform(5, 15)
+             self.size = random.randint(2, 5) # Smaller refined crystals
+             self.rot_speed = random.uniform(-5, 5)
 
     def update(self, dt):
         self.x += self.vx * dt
         self.y += self.vy * dt
-        self.angle += self.rotate_speed
+        self.angle += getattr(self, 'rotate_speed', 0) * 10 * dt
         
+        # Theme specific updates
+        if self.type == 'MIDNIGHT':
+            # Twinkle
+            t = pygame.time.get_ticks() / 1000.0
+            alpha = 150 + 100 * math.sin(t * self.twinkle_speed + self.x)
+            self.color = (255, 255, 255, int(alpha))
+        elif self.type == 'SHADOW':
+            # Ghostly hover
+            self.vx += random.uniform(-10, 10) * dt
+            self.vy += random.uniform(-10, 10) * dt
+            self.vx *= 0.95
+            self.vy *= 0.95
+        
+        # Screen Wrap
         if self.y < -50: self.y = WINDOW_HEIGHT + 50
         if self.y > WINDOW_HEIGHT + 50: self.y = -50
         if self.x < -50: self.x = WINDOW_WIDTH + 50
@@ -300,20 +331,61 @@ class BackgroundElement:
 
     def draw(self, surface):
         if self.type == 'OCEAN':
+            # Bubbles with highlight
             pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.size, 1)
+            pygame.draw.circle(surface, (255, 255, 255, 100), (int(self.x - self.size*0.3), int(self.y - self.size*0.3)), 1)
+        
         elif self.type == 'FIRE':
-            glow = self.size * 2
+            # Soft glow embers
+            glow = self.size * 3
             s = pygame.Surface((glow*2, glow*2), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*self.color[:3], 100), (glow, glow), glow)
+            # Core
+            pygame.draw.circle(s, (255, 200, 50, 200), (glow, glow), self.size)
+            # Halo
+            pygame.draw.circle(s, (*self.color[:3], 50), (glow, glow), glow)
             surface.blit(s, (int(self.x-glow), int(self.y-glow)))
+            
         elif self.type == 'FOREST':
+            # Leaves (diamonds)
+            cx, cy = int(self.x), int(self.y)
+            sz = self.size
+            if random.random() < 0.05: # Occasional flutter
+                 sz = int(sz * 0.8)
             points = [
-                (self.x, self.y - self.size),
-                (self.x + self.size, self.y),
-                (self.x, self.y + self.size),
-                (self.x - self.size, self.y)
+                (cx, cy - sz),
+                (cx + sz//2, cy),
+                (cx, cy + sz),
+                (cx - sz//2, cy)
             ]
             pygame.draw.polygon(surface, self.color, points)
+            
+        elif self.type == 'NEON':
+            # Outlined Squares with rotation
+            s = pygame.Surface((self.size*2, self.size*2), pygame.SRCALPHA)
+            pygame.draw.rect(s, self.color, (0, 0, self.size, self.size), 1)
+            rot = pygame.transform.rotate(s, self.angle)
+            surface.blit(rot, (self.x, self.y))
+            
+        elif self.type == 'SHADOW':
+            # Ghost/Smoke puffs
+            s = pygame.Surface((self.size*2, self.size*2), pygame.SRCALPHA)
+            pygame.draw.circle(s, self.color, (self.size, self.size), self.size)
+            surface.blit(s, (self.x, self.y))
+            
+        elif self.type == 'CRYSTAL':
+             # Sharp shards
+             offset = int(self.angle % 5)
+             pygame.draw.line(surface, self.color, (self.x, self.y - self.size), (self.x, self.y + self.size), 1)
+             pygame.draw.line(surface, self.color, (self.x - self.size, self.y), (self.x + self.size, self.y), 1)
+             
+        elif self.type == 'MIDNIGHT':
+             # Stars
+             surface.fill(self.color, (self.x, self.y, self.size, self.size))
+             
+        elif self.type == 'SUNSET':
+             # Horizontal lines (wind)
+             pygame.draw.line(surface, self.color, (self.x, self.y), (self.x + self.size * 3, self.y), 1)
+             
         else:
             pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), self.size, self.size))
 
@@ -376,6 +448,7 @@ class Turtle:
         if self.enemy_type == 'spiny': return Tetris.SPINY_FRAMES
         if self.enemy_type == 'blooper': return Tetris.BLOOPER_FRAMES
         if self.enemy_type == 'piranha': return Tetris.PIRANHA_FRAMES
+        if self.enemy_type == 'cheepcheep': return Tetris.CHEEP_FRAMES
         if self.enemy_type == 'magic_mushroom':
             return [self.tetris.sprite_manager.get_sprite('items', 'mushroom_super', scale_factor=1.5)]
         return Tetris.TURTLE_FRAMES
@@ -416,8 +489,8 @@ class Turtle:
                 else:
                     # SQUISH!
                     self.state = 'dead' 
-                    if game_grid.tetris:
-                        game_grid.tetris.spawn_particles(PLAYFIELD_X + self.x * BLOCK_SIZE, 
+                    if hasattr(self, 'tetris') and self.tetris:
+                        self.tetris.spawn_particles(PLAYFIELD_X + self.x * BLOCK_SIZE, 
                                                        PLAYFIELD_Y + self.y * BLOCK_SIZE, 
                                                        (255, 255, 255), count=5)
                     return 'SQUISHED'
@@ -631,7 +704,8 @@ class Turtle:
             game.sound_manager.play('life')
             score = 2500
         else:
-            game.turtles_stomped += 1
+            # Note: Count is handled in main loop to prevent double-counting.
+            # We only handle life gain here.
             if game.turtles_stomped % 5 == 0:
                 game.lives = min(game.lives + 1, 5)
                 game.sound_manager.play('life')
@@ -730,6 +804,34 @@ class HammerBro(Turtle):
                 self.tetris.effects.append(h)
         return False
 
+class CheepCheep(Turtle):
+    ENEMY_TYPE = 'cheepcheep'
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.fly_speed = random.uniform(2.0, 4.0)
+        self.y = random.randint(2, GRID_HEIGHT // 2) # Fly in top half
+        self.vy = 0 # No gravity (flying)
+        self.state = 'flying'
+        # Randomize direction and start side
+        if random.random() < 0.5:
+            self.x = -1
+            self.direction = 1
+        else:
+            self.x = GRID_WIDTH
+            self.direction = -1
+            
+    def update_movement(self, dt, grid):
+        """Fly horizontally across the screen"""
+        self.x += self.direction * self.fly_speed * dt
+        
+        # Wave motion
+        self.y += math.sin(self.x) * 2.0 * dt
+        
+        # Kill if off screen
+        if self.direction > 0 and self.x > GRID_WIDTH + 1: return True
+        if self.direction < 0 and self.x < -2: return True
+        return False
+
 class Blooper(Turtle):
     ENEMY_TYPE = 'blooper'
     def __init__(self, **kwargs):
@@ -764,6 +866,8 @@ class Piranha(Turtle):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.offset = 0
+        self.swim_timer = 0  # Initialize timer
+        self.base_y = self.y  # Store initial y position
         
     def update_movement(self, dt, grid):
         """Bob up and down like a piranha plant in a pipe"""
@@ -1637,15 +1741,22 @@ class BossFireball:
         self.timer += dt
         
     def draw(self, surface):
-        px = PLAYFIELD_X + (self.x - 0.5) * BLOCK_SIZE
-        py = PLAYFIELD_Y + (self.y - 0.5) * BLOCK_SIZE
-        # Use fireball animation or fallback
-        frames = self.sprite_manager.get_animation_frames('bowser', prefix='fire')
-        if not frames:
-            pygame.draw.circle(surface, (255, 100, 0), (int(px + BLOCK_SIZE//2), int(py + BLOCK_SIZE//2)), 12)
-        else:
-            idx = int(self.timer * 10) % len(frames)
-            surface.blit(frames[idx], (px, py))
+        try:
+            px = PLAYFIELD_X + (self.x - 0.5) * BLOCK_SIZE
+            py = PLAYFIELD_Y + (self.y - 0.5) * BLOCK_SIZE
+            
+            frames = None
+            if self.sprite_manager:
+                frames = self.sprite_manager.get_animation_frames('bowser', prefix='fire')
+                
+            if not frames:
+                pygame.draw.circle(surface, (255, 100, 0), (int(px + BLOCK_SIZE//2), int(py + BLOCK_SIZE//2)), 12)
+            else:
+                idx = int(self.timer * 10) % len(frames)
+                surface.blit(frames[idx], (px, py))
+        except Exception:
+            # Absolute fallback
+            pygame.draw.circle(surface, (255, 0, 0), (int(px + BLOCK_SIZE//2), int(py + BLOCK_SIZE//2)), 10)
 
 class BigBoss:
     def __init__(self, tetris_ref):
@@ -1672,96 +1783,109 @@ class BigBoss:
         self.fireballs = []
         
     def update(self, dt):
-        # Move back and forth
-        # Speed up as HP drops
-        health_pct = max(0.2, self.hp / self.max_hp)
-        current_speed = self.speed * (1.0 + (1.0 - health_pct) * 2.0)
-        self.x += self.direction * current_speed * dt
-        
-        # Boundary check
-        if self.x < 0:
-            self.x = 0
-            self.direction = 1
-        elif self.x > GRID_WIDTH - self.width:
-            self.x = GRID_WIDTH - self.width
-            self.direction = -1
+        try:
+            # Move back and forth
+            # Speed up as HP drops
+            health_pct = max(0.2, self.hp / self.max_hp)
+            current_speed = self.speed * (1.0 + (1.0 - health_pct) * 2.0)
+            self.x += self.direction * current_speed * dt
             
-        # Animation
-        self.anim_timer += dt
-        if self.anim_timer > 0.15:
-            self.anim_timer = 0
-            if self.frames:
-                self.frame_index = (self.frame_index + 1) % len(self.frames)
-            
-        if self.hit_timer > 0:
-            self.hit_timer -= dt
-            
-        # Attack Logic - More forgiving
-        self.attack_timer -= dt
-        if self.attack_timer <= 0:
-            # SHOOT FIREBALL
-            self.attack_timer = 6.0 * health_pct + 2.5 # Slower attacks, more time to react
-            fb = BossFireball(self.x + 1.5, self.y - 2.0, self.tetris.sprite_manager)
-            self.fireballs.append(fb)
-            self.tetris.sound_manager.play('fireball')
-            
-        # Update Fireballs
-        for fb in self.fireballs[:]:
-            fb.update(dt)
-            if fb.y < -2:
-                 self.fireballs.remove(fb)
-                 
-            # Hit check with current piece
-            if self.tetris.current_piece:
-                p = self.tetris.current_piece
-                for bx, by in p.blocks:
-                    gx, gy = p.x + bx, p.y + by
-                    if abs(gx - fb.x) < 1.0 and abs(gy - fb.y) < 1.0:
-                         # Hit! - Break the piece or add garbage?
-                         # For now, just cancel the piece and add a penalty
-                         self.tetris.sound_manager.play('damage')
-                         self.tetris.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "PIECE DESTROYED!", C_RED))
-                         self.tetris.current_piece = self.tetris.next_piece
-                         self.tetris.next_piece = self.tetris.spawner.get_next_piece()
-                         if fb in self.fireballs: self.fireballs.remove(fb)
-                         break
-            
-    def draw(self, surface):
-        px = PLAYFIELD_X + self.x * BLOCK_SIZE
-        # Boss is at the bottom of the grid
-        py = PLAYFIELD_Y + (self.y - 2.5) * BLOCK_SIZE
-        
-        if not self.frames:
-            # Fallback rect
-            color = (255, 100, 100) if self.hit_timer > 0 else (200, 0, 0)
-            rect = (px, py, self.width * BLOCK_SIZE, self.height * BLOCK_SIZE)
-            pygame.draw.rect(surface, color, rect)
-        else:
-            img = self.frames[self.frame_index]
-            if self.direction < 0:
-                img = pygame.transform.flip(img, True, False)
+            # Boundary check
+            if self.x < 0:
+                self.x = 0
+                self.direction = 1
+            elif self.x > GRID_WIDTH - self.width:
+                self.x = GRID_WIDTH - self.width
+                self.direction = -1
+                
+            # Animation
+            self.anim_timer += dt
+            if self.anim_timer > 0.15:
+                self.anim_timer = 0
+                if self.frames:
+                    self.frame_index = (self.frame_index + 1) % len(self.frames)
                 
             if self.hit_timer > 0:
-                # Flash effect
-                mask = pygame.mask.from_surface(img)
-                flash_surf = mask.to_surface(setcolor=(255, 255, 255, 200), unsetcolor=(0, 0, 0, 0))
-                surface.blit(img, (px, py))
-                surface.blit(flash_surf, (px, py), special_flags=pygame.BLEND_RGBA_ADD)
+                self.hit_timer -= dt
+                
+            # Attack Logic - More forgiving
+            self.attack_timer -= dt
+            if self.attack_timer <= 0:
+                # SHOOT FIREBALL
+                self.attack_timer = 6.0 * health_pct + 2.5 # Slower attacks, more time to react
+                # Ensure sprite manager exists
+                if hasattr(self.tetris, 'sprite_manager'):
+                    fb = BossFireball(self.x + 1.5, self.y - 2.0, self.tetris.sprite_manager)
+                    self.fireballs.append(fb)
+                    self.tetris.sound_manager.play('fireball')
+                
+            # Update Fireballs
+            for fb in self.fireballs[:]:
+                fb.update(dt)
+                if fb.y < -2:
+                     self.fireballs.remove(fb)
+                     
+                # Hit check with current piece
+                if self.tetris.current_piece:
+                    p = self.tetris.current_piece
+                    for bx, by in p.blocks:
+                        gx, gy = p.x + bx, p.y + by
+                        if abs(gx - fb.x) < 1.0 and abs(gy - fb.y) < 1.0:
+                             # Hit! - Break the piece or add garbage?
+                             # For now, just cancel the piece and add a penalty
+                             self.tetris.sound_manager.play('damage')
+                             self.tetris.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "PIECE DESTROYED!", C_RED))
+                             self.tetris.current_piece = self.tetris.next_piece
+                             self.tetris.next_piece = self.tetris.spawner.get_next_piece()
+                             if fb in self.fireballs: self.fireballs.remove(fb)
+                             break
+        except Exception as e:
+            # print(f"Error in BigBoss update: {e}") # Reduce spam
+            self.error_count = getattr(self, 'error_count', 0) + 1
+            if self.error_count > 10:
+                print("Too many boss errors - killing boss to prevent softlock.")
+                self.hp = 0 # Failsafe kill
+            
+    def draw(self, surface):
+        try:
+            px = PLAYFIELD_X + self.x * BLOCK_SIZE
+            # Boss is at the bottom of the grid
+            py = PLAYFIELD_Y + (self.y - 2.5) * BLOCK_SIZE
+            
+            if not self.frames:
+                # Fallback rect
+                color = (255, 100, 100) if self.hit_timer > 0 else (200, 0, 0)
+                rect = (px, py, self.width * BLOCK_SIZE, self.height * BLOCK_SIZE)
+                pygame.draw.rect(surface, color, rect)
             else:
-                surface.blit(img, (px, py))
+                img = self.frames[self.frame_index]
+                if self.direction < 0:
+                    img = pygame.transform.flip(img, True, False)
+                    
+                if self.hit_timer > 0:
+                    # Flash effect
+                    mask = pygame.mask.from_surface(img)
+                    flash_surf = mask.to_surface(setcolor=(255, 255, 255, 200), unsetcolor=(0, 0, 0, 0))
+                    surface.blit(img, (px, py))
+                    surface.blit(flash_surf, (px, py), special_flags=pygame.BLEND_RGBA_ADD)
+                else:
+                    surface.blit(img, (px, py))
 
-        # Draw Fireballs
-        for fb in self.fireballs:
-            fb.draw(surface)
-        
-        # Draw HP bar
-        hp_bar_width = self.width * BLOCK_SIZE
-        hp_rect = (px, py - 20, hp_bar_width, 8)
-        pygame.draw.rect(surface, (50, 0, 0), hp_rect) # BG
-        if self.hp > 0:
-            curr_hp_width = (self.hp / self.max_hp) * hp_bar_width
-            pygame.draw.rect(surface, (255, 0, 0), (px, py - 20, curr_hp_width, 8))
-        pygame.draw.rect(surface, (255, 255, 255), hp_rect, 1) # Border
+            # Draw Fireballs
+            for fb in self.fireballs:
+                if hasattr(fb, 'draw'):
+                    fb.draw(surface)
+            
+            # Draw HP bar
+            hp_bar_width = self.width * BLOCK_SIZE
+            hp_rect = (px, py - 20, hp_bar_width, 8)
+            pygame.draw.rect(surface, (50, 0, 0), hp_rect) # BG
+            if self.hp > 0:
+                curr_hp_width = (self.hp / self.max_hp) * hp_bar_width
+                pygame.draw.rect(surface, (255, 0, 0), (px, py - 20, curr_hp_width, 8))
+            pygame.draw.rect(surface, (255, 255, 255), hp_rect, 1) # Border
+        except Exception as e:
+            pass # Silent fail drawing
 
 
 
@@ -1778,30 +1902,40 @@ class Tetromino:
         return [list(row) for row in zip(*self.shape[::-1])]
 
 
-def draw_3d_block(surface, color, x, y, size):
-    # Premium "Gem" Style Block
-    # 1. Base Gradient (Darker at bottom)
-    r, g, b = color[:3]
-    h, s, v = pygame.Color(r, g, b).hsla[:3]
-    
-    # Create gradient effect
-    for i in range(size):
-        # Darken as we go down
-        shade = max(0, 1.0 - (i / size) * 0.4) 
-        row_color = (int(r * shade), int(g * shade), int(b * shade))
-        pygame.draw.line(surface, row_color, (x, y + i), (x + size, y + i))
-        
-    # 2. Glassy Highlight (Top Left Triangle)
-    s_high = pygame.Surface((size, size), pygame.SRCALPHA)
-    pygame.draw.polygon(s_high, (255, 255, 255, 60), [(0,0), (size, 0), (0, size)])
-    surface.blit(s_high, (x, y))
+# Caching for draw_3d_block
+BLOCK_CACHE = {}
 
-    # 3. Inner Shine (Top Left Dot)
-    pygame.draw.circle(surface, (255, 255, 255, 180), (x + 4, y + 4), 2)
+def draw_3d_block(surface, color, x, y, size):
+    # Use cached version if possible
+    color_rgb = tuple(color[:3])
+    cache_key = (color_rgb, size)
     
-    # 4. Refined Border
-    pygame.draw.rect(surface, (255, 255, 255), (x, y, size, size), 1) # Outer thin light outline
-    pygame.draw.rect(surface, (0, 0, 0, 100), (x, y, size, size), 2) # Inner dark definition
+    if cache_key not in BLOCK_CACHE:
+        # Create the cached surface
+        r, g, b = color_rgb
+        block_surf = pygame.Surface((size, size))
+        
+        # 1. Base Gradient
+        for i in range(size):
+            shade = max(0, 1.0 - (i / size) * 0.4) 
+            row_color = (int(r * shade), int(g * shade), int(b * shade))
+            pygame.draw.line(block_surf, row_color, (0, i), (size, i))
+            
+        # 2. Glassy Highlight
+        s_high = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.polygon(s_high, (255, 255, 255, 60), [(0,0), (size, 0), (0, size)])
+        block_surf.blit(s_high, (0, 0))
+
+        # 3. Inner Shine
+        pygame.draw.circle(block_surf, (255, 255, 255, 180), (4, 4), 2)
+        
+        # 4. Refined Border
+        pygame.draw.rect(block_surf, (255, 255, 255), (0, 0, size, size), 1)
+        pygame.draw.rect(block_surf, (0, 0, 0, 100), (0, 0, size, size), 2)
+        
+        BLOCK_CACHE[cache_key] = block_surf
+
+    surface.blit(BLOCK_CACHE[cache_key], (x, y))
 
 class Block:
     def __init__(self, color, block_type='normal', sprite_data=None):
@@ -1928,8 +2062,8 @@ class Grid:
                 has_garbage = False
                 for block in cols:
                     if block and getattr(block, 'type', '') == 'brick': has_garbage = True
-                    if block and block.type == 'coin': special_events.append('COIN')
-                    if block and block.type == 'question': special_events.append('ITEM')
+                    if block and block.type == 'coin': special_events.append('COIN_COLLECT')
+                    if block and block.type == 'question': special_events.append('QUESTION_CLEAR')
                 if has_garbage: special_events.append('BRICK_CLEAR')
         
         while len(rows_to_keep) < GRID_HEIGHT:
@@ -1964,23 +2098,29 @@ class Grid:
                 col = (int(r * f), int(g * f), int(b * f))
                 pygame.draw.line(screen, col, (PLAYFIELD_X, PLAYFIELD_Y + i), (PLAYFIELD_X + PLAYFIELD_WIDTH, PLAYFIELD_Y + i))
             
-            # Pattern Overlay: Subtle Grid
-            grid_surf = pygame.Surface((PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT), pygame.SRCALPHA)
-            for x in range(0, PLAYFIELD_WIDTH, BLOCK_SIZE):
-                pygame.draw.line(grid_surf, (0, 0, 0, 20), (x, 0), (x, PLAYFIELD_HEIGHT))
-            for y in range(0, PLAYFIELD_HEIGHT, BLOCK_SIZE):
-                pygame.draw.line(grid_surf, (0, 0, 0, 20), (0, y), (PLAYFIELD_WIDTH, y))
-            screen.blit(grid_surf, (PLAYFIELD_X, PLAYFIELD_Y))
+            # Pattern Overlay: Subtle Grid (Cached)
+            if not hasattr(self, '_cached_grid_surf'):
+                self._cached_grid_surf = pygame.Surface((PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT), pygame.SRCALPHA)
+                for x in range(0, PLAYFIELD_WIDTH, BLOCK_SIZE):
+                    pygame.draw.line(self._cached_grid_surf, (0, 0, 0, 20), (x, 0), (x, PLAYFIELD_HEIGHT))
+                for y in range(0, PLAYFIELD_HEIGHT, BLOCK_SIZE):
+                    pygame.draw.line(self._cached_grid_surf, (0, 0, 0, 20), (0, y), (PLAYFIELD_WIDTH, y))
+            screen.blit(self._cached_grid_surf, (PLAYFIELD_X, PLAYFIELD_Y))
             
             # Border Glow
             glow_color = (100, 100, 255) if level % 2 == 0 else (255, 100, 100)
             
-            # Glow Effect
-            for i in range(5):
-                alpha = 100 - i * 20
-                s_glow = pygame.Surface((PLAYFIELD_WIDTH + i*4, PLAYFIELD_HEIGHT + i*4), pygame.SRCALPHA)
-                msg_col = glow_color + (alpha,)
-                pygame.draw.rect(s_glow, msg_col, (0, 0, s_glow.get_width(), s_glow.get_height()), 2)
+            # Glow Effect (Cached)
+            if not hasattr(self, '_cached_glow_surfs'):
+                self._cached_glow_surfs = []
+                for i in range(5):
+                    alpha_val = 100 - i * 20
+                    s_glow = pygame.Surface((PLAYFIELD_WIDTH + i*4, PLAYFIELD_HEIGHT + i*4), pygame.SRCALPHA)
+                    msg_col = glow_color + (alpha_val,)
+                    pygame.draw.rect(s_glow, msg_col, (0, 0, s_glow.get_width(), s_glow.get_height()), 2)
+                    self._cached_glow_surfs.append(s_glow)
+
+            for i, s_glow in enumerate(self._cached_glow_surfs):
                 screen.blit(s_glow, (PLAYFIELD_X - i*2, PLAYFIELD_Y - i*2))
             # Inner line
             pygame.draw.rect(screen, (50, 50, 50), bg_rect, 1)
@@ -2557,6 +2697,14 @@ class Tetris:
             'shell': piranha_walk
         }
         
+        # Load Cheep Cheep
+        cheep_walk = self.sprite_manager.get_animation_frames('cheepcheep', scale_factor=2.5)
+        Tetris.CHEEP_FRAMES = {
+            'fly': cheep_walk,
+            'walk': cheep_walk,
+            'shell': cheep_walk
+        }
+        
         # Tint Golden (Based on Walk frames)
         for f in Tetris.TURTLE_FRAMES['walk']:
             gf = f.copy()
@@ -2577,7 +2725,9 @@ class Tetris:
         
         # Modern Gesture Controls
         self.gesture_controls = GestureControls((WINDOW_WIDTH, WINDOW_HEIGHT))
-        self.show_gesture_tutorial = False  # Set to True to show tutorial on first launch
+        self.show_gesture_tutorial = False  # Starts OFF - only enabled on first touch input
+        self.show_mobile_hints = False  # Starts OFF - only enabled on first touch input
+        self.is_touch_device = False  # Will be set to True when first touch detected
         
         # Load Font
         self.font_path = game_settings.get_asset_path('fonts', 'main')
@@ -2607,6 +2757,10 @@ class Tetris:
         self._music_started = False
               
         self.ui_bg = None
+        self._banner_surface = None
+        self._ghost_surface = None
+        self._vignette_surface = None
+        self._grid_surface = None
 
         self.update_scaling()
         
@@ -2746,6 +2900,18 @@ class Tetris:
         self.grid.grid_shadow = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.grid.grid = self.grid.grid_neon # Reset pointer
 
+        # Update self.level to match world/level_in_world (fixes enemy spawn rates)
+        self.level = (self.world - 1) * 4 + self.level_in_world
+        
+        # Clear all enemies from previous level
+        self.turtles = []
+        self.lakitu = None
+        self.lakitu_timer = 0
+        self.turtle_spawn_timer = 5.0  # Give player time to prepare
+        
+        # Reset hearts to max for fresh start
+        self.hearts = self.max_hearts
+        
         self.lines_this_level = 0
         if self.world == 1 and self.level_in_world == 1:
             self.lines_required = 5  # Easy first level
@@ -2755,13 +2921,14 @@ class Tetris:
         self.is_boss_level = (self.level_in_world == 4)
         self.big_boss = None
         if self.is_boss_level:
-            self.max_boss_hp = 250 + self.world * 100 # Reduced from 400+w*200 for fairness
+
+            self.max_boss_hp = 100 + self.world * 50 # 1-4 = 150HP
             self.boss_hp = self.max_boss_hp
             self.big_boss = BigBoss(self)
             self.big_boss.hp = self.boss_hp
             self.big_boss.max_hp = self.max_boss_hp
             self.setup_boss_arena()
-            self.boss_garbage_timer = 15.0  # More time before first garbage
+            self.boss_garbage_timer = 25.0  # Much more time (was 15)
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS BATTLE!", C_RED, size='big'))
         
             # self.sound_manager.play('music') # Removed legacy call
@@ -2777,6 +2944,9 @@ class Tetris:
         # CHANGE MUSIC each level!
         if hasattr(self, 'sound_manager'):
             self.sound_manager.next_track()
+            
+        # Add Mario Bricks for Level Start
+        self.setup_level_bricks()
         
         # Announcement
         self.show_level_intro = True
@@ -2785,14 +2955,46 @@ class Tetris:
     def apply_level_theme(self):
         """Apply visual theme based on current level"""
         themes = {
-            'NEON': {'bg': (20, 20, 40), 'grid': (30, 30, 50), 'accent': (255, 20, 147)},
-            'OCEAN': {'bg': (10, 30, 50), 'grid': (20, 50, 80), 'accent': (0, 200, 255)},
-            'FOREST': {'bg': (15, 35, 20), 'grid': (25, 55, 35), 'accent': (100, 255, 100)},
-            'FIRE': {'bg': (40, 15, 10), 'grid': (60, 25, 20), 'accent': (255, 100, 50)},
-            'SHADOW': {'bg': (15, 15, 25), 'grid': (25, 25, 40), 'accent': (150, 100, 200)},
-            'CRYSTAL': {'bg': (25, 35, 45), 'grid': (40, 55, 70), 'accent': (150, 220, 255)},
-            'SUNSET': {'bg': (45, 25, 30), 'grid': (70, 40, 50), 'accent': (255, 150, 80)},
-            'MIDNIGHT': {'bg': (10, 10, 20), 'grid': (20, 20, 35), 'accent': (100, 100, 180)},
+            'NEON': {
+                'bg': (10, 5, 20),      # Deep Purple/Black
+                'grid': (40, 20, 60),   # Plum
+                'accent': (0, 255, 255) # Cyan
+            },
+            'OCEAN': {
+                'bg': (0, 20, 40),      # Deep Sea Blue
+                'grid': (0, 50, 80),    # Teal
+                'accent': (0, 150, 255) # Azure
+            },
+            'FOREST': {
+                'bg': (10, 25, 10),     # Dark Moss
+                'grid': (30, 60, 30),   # Forest Green
+                'accent': (100, 255, 100) # Neon Green
+            },
+            'FIRE': {
+                'bg': (30, 5, 5),       # Dark Charcoal/Red
+                'grid': (80, 20, 10),   # Magma
+                'accent': (255, 150, 0) # Blaze Orange
+            },
+            'SHADOW': {
+                'bg': (5, 5, 10),       # Void
+                'grid': (30, 30, 40),   # Grey
+                'accent': (150, 50, 255) # Purple Haze
+            },
+            'CRYSTAL': {
+                'bg': (10, 15, 30),     # Dark Cavern
+                'grid': (20, 40, 80),   # Crystal Blue
+                'accent': (200, 240, 255) # Diamond
+            },
+            'SUNSET': {
+                'bg': (40, 20, 30),     # Dusk
+                'grid': (80, 40, 50),   # Sunset Cloud
+                'accent': (255, 200, 50)# Golden Sun
+            },
+            'MIDNIGHT': {
+                'bg': (0, 0, 15),       # Space Black
+                'grid': (20, 20, 50),   # Deep Blue
+                'accent': (255, 255, 255) # Starlight
+            },
         }
         theme = themes.get(self.level_theme, themes['NEON'])
         self.theme_bg = theme['bg']
@@ -2802,8 +3004,141 @@ class Tetris:
         
         # Spawn World "Treats" (Decorations)
         self.clouds = [] # Reusing clouds as generic bg elements
-        for _ in range(25):
+        count = 60 if self.level_theme == 'MIDNIGHT' else 40
+        for _ in range(count):
             self.clouds.append(BackgroundElement(self.level_theme))
+
+    def setup_level_bricks(self):
+        """Place initial Mario-style bricks pattern - SOPHISTICATED & VARIED"""
+        if self.is_boss_level: return 
+        
+        # Determine pattern based on World + Level (Total Level Index)
+        total_level = (self.world - 1) * 4 + self.level_in_world
+        
+        # Colors
+        c_brick_overworld = (180, 50, 20) # Reddish Brick
+        c_brick_cave = (0, 100, 200)      # Blue Brick
+        c_brick_castle = (100, 100, 100)  # Grey Stone
+        c_ground = (139, 69, 19)          # Brown Ground
+        c_pipe = (0, 180, 0)
+        c_hard = (160, 100, 60)           # Hard Block
+        
+        # Choose Palettes based on active theme
+        block_c = c_brick_overworld
+        if self.level_theme in ['OCEAN', 'MIDNIGHT', 'CRYSTAL']: block_c = c_brick_cave
+        elif self.level_theme in ['SHADOW', 'FIRE']: block_c = c_brick_castle
+        
+        print(f"Generating Layout for World {self.world}-{self.level_in_world} (Theme: {self.level_theme})")
+        
+        def place(x, y, c, t='brick'):
+            if 0 <= x < GRID_WIDTH and 0 <= y < GRID_HEIGHT:
+                self.grid.grid[y][x] = Block(c, t)
+
+        # 8 Distinct Patterns Rotated
+        pattern_type = total_level % 8 
+        
+        if pattern_type == 1:
+            # 1. MUSHROOM PLATFORMS (1-1 Style)
+            # Ground with varying heights and a floating "Q" block
+            place(0, GRID_HEIGHT-1, c_ground); place(1, GRID_HEIGHT-1, c_ground)
+            place(GRID_WIDTH-1, GRID_HEIGHT-1, c_ground); place(GRID_WIDTH-2, GRID_HEIGHT-1, c_ground)
+            
+            # Central Platform
+            for x in range(3, GRID_WIDTH-3):
+                place(x, GRID_HEIGHT-3, block_c)
+            
+            # Floating Question Block
+            place(5, GRID_HEIGHT-6, (255, 200, 0), 'question')
+            place(4, GRID_HEIGHT-6, block_c)
+            place(6, GRID_HEIGHT-6, block_c)
+
+        elif pattern_type == 2:
+            # 2. THE PYRAMID (Classic)
+            start_y = GRID_HEIGHT - 1
+            height = 4
+            for h in range(height):
+                y = start_y - h
+                start_x = 2 + h
+                end_x = GRID_WIDTH - 2 - h
+                for x in range(start_x, end_x):
+                    place(x, y, block_c)
+            # Capstone
+            place(GRID_WIDTH//2, start_y - height, (255, 200, 0), 'question')
+
+        elif pattern_type == 3:
+            # 3. VERTICAL PIPES (New)
+            # Varied height pipes on sides, clear center
+            heights = [3, 5, 2]
+            positions = [1, 2, 8]
+            for i, x in enumerate(positions):
+                h = heights[i % len(heights)]
+                # Pipe body
+                for y in range(GRID_HEIGHT-h, GRID_HEIGHT):
+                    place(x, y, c_pipe)
+                # Pipe Cap (slightly wider logic handled by color only here)
+                place(x, GRID_HEIGHT-h, (0, 220, 0)) # Lighter Green Cap
+                
+        elif pattern_type == 4:
+             # 4. STEPS TO HEAVEN
+             # Stairs on both outer edges
+             for i in range(4):
+                 place(i, GRID_HEIGHT-1-i, block_c)
+                 place(GRID_WIDTH-1-i, GRID_HEIGHT-1-i, block_c)
+             # Center bridge
+             for x in range(3, GRID_WIDTH-3):
+                 place(x, GRID_HEIGHT-1, c_ground)
+
+        elif pattern_type == 5:
+             # 5. FLOATING ISLES
+             # Two main islands
+             y = GRID_HEIGHT - 4
+             # Left Isle
+             place(1, y, block_c); place(2, y, block_c); place(3, y, block_c)
+             place(2, y+1, c_hard)
+             # Right Isle
+             place(6, y-1, block_c); place(7, y-1, block_c); place(8, y-1, block_c)
+             place(7, y, c_hard)
+
+        elif pattern_type == 6:
+             # 6. TWIN TOWERS (Refined)
+             # Tall side walls with inner platforms
+             for y in range(GRID_HEIGHT-7, GRID_HEIGHT):
+                 place(1, y, c_hard)
+                 place(GRID_WIDTH-2, y, c_hard)
+             
+             # Inner Steps
+             place(2, GRID_HEIGHT-3, block_c)
+             place(GRID_WIDTH-3, GRID_HEIGHT-3, block_c)
+             
+             # Center Question
+             place(GRID_WIDTH//2, GRID_HEIGHT-6, (255, 215, 0), 'question')
+
+        elif pattern_type == 7:
+             # 7. ANCIENT RUINS
+             # Irregular columns
+             import random
+             state = random.getstate()
+             random.seed(self.world * 100 + self.level_in_world) 
+             
+             for x in range(0, GRID_WIDTH, 2):
+                 h = random.choice([2, 4, 1, 3])
+                 for y in range(GRID_HEIGHT-h, GRID_HEIGHT):
+                     place(x, y, c_brick_castle if random.random() > 0.3 else c_hard)
+                     
+             random.setstate(state)
+        
+        else: # 0
+             # 8. THE CAGE (Open Top)
+             # U-shape
+             for x in range(2, GRID_WIDTH-2):
+                 place(x, GRID_HEIGHT-1, c_hard)
+             for y in range(GRID_HEIGHT-5, GRID_HEIGHT-1):
+                 place(2, y, block_c)
+                 place(GRID_WIDTH-3, y, block_c)
+             # Floating stopper
+             place(GRID_WIDTH//2, GRID_HEIGHT-5, block_c)
+                 
+
 
     def setup_boss_arena(self):
         """Setup the partially filled line above the boss"""
@@ -2845,6 +3180,10 @@ class Tetris:
         if self.big_boss.hp <= 0:
             self.sound_manager.play('world_clear') 
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "BOSS DEFEATED!", C_GOLD, size='big'))
+            # Coin Shower
+            # Coin Shower
+            self.spawn_particles(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, (255, 215, 0), count=50)
+            
             self.trigger_level_win()
 
     def spawn_particles(self, x, y, color, count=10):
@@ -2879,7 +3218,7 @@ class Tetris:
         self.flash_lines = line_indices
         
         # BOSS DAMAGE - Line Clears are super effective!
-        if self.big_boss:
+        if self.big_boss and self.big_boss.hp > 0:
             dmg_map = {1: 20, 2: 45, 3: 80, 4: 150}
             dmg = dmg_map.get(cleared, 15 * cleared)
             self.damage_boss(dmg, "LINE CLEAR")
@@ -2929,7 +3268,7 @@ class Tetris:
 
         if self.is_boss_level:
             # EXTRA DAMAGE FOR GARBAGE
-            if 'BRICK_CLEAR' in events: 
+            if 'BRICK_CLEAR' in events and self.big_boss and self.big_boss.hp > 0: 
                 self.damage_boss(15, "BRICK SMASH")
         else:
             # Check for level win
@@ -2943,6 +3282,14 @@ class Tetris:
                 self.spawn_particles(PLAYFIELD_X + (GRID_WIDTH//2)*BLOCK_SIZE, 
                                    PLAYFIELD_Y + row_idx*BLOCK_SIZE, 
                                    (255, 215, 0), count=20)
+                
+        # --- PROCESS COLLECTIBLES FROM LINE CLEARS ---
+        for ev in events:
+            if ev == 'COIN_COLLECT' or ev == 'QUESTION_CLEAR':
+                self.coins += 1
+                self.score += 50
+                self.sound_manager.play('coin')
+                self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "+1 COIN", (255, 215, 0)))
 
     def trigger_level_win(self):
         self.sound_manager.play('world_clear')
@@ -2953,6 +3300,9 @@ class Tetris:
             self.level_in_world = 1
             self.world += 1
     
+        # Hide boss immediately on win
+        self.big_boss = None
+        
         # Go to Results Screen
         self.game_state = 'WORLD_CLEAR'
         self.transition_timer = 0
@@ -2969,6 +3319,84 @@ class Tetris:
         self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "MEGA MODE!", (255, 0, 0), size=60))
         if self.sound_manager: self.sound_manager.play('star_theme')
     
+    def _process_mobile_action(self, action):
+        """Process touch gestures and convert them into game actions.
+        This is the critical bridge between MobileControls and the game logic."""
+        if not action or self.game_state != 'PLAYING':
+            return
+        
+        if action == 'MOVE_LEFT':
+            self.action_move(-1)
+        elif action == 'MOVE_RIGHT':
+            self.action_move(1)
+        elif action == 'ROTATE':
+            self.action_rotate(1)  # Clockwise rotation
+        elif action == 'ROTATE_CCW':
+            self.action_rotate(-1)  # Counter-clockwise
+        elif action == 'SOFT_DROP':
+            if self.current_piece:
+                self.current_piece.y += 1
+                if self.grid.check_collision(self.current_piece):
+                    self.current_piece.y -= 1
+        elif action == 'HARD_DROP':
+            self.sound_manager.play('drop')
+            self.action_hard_drop()
+        elif action == 'HOLD':
+            # Future: implement hold piece functionality
+            pass
+    
+    def draw_mobile_controls(self, surface):
+        """Draw on-screen touch control hints for mobile players."""
+        if not getattr(self, 'show_mobile_hints', True):
+            return
+            
+        # Only show on first few levels or when paused
+        if self.level > 2 and self.game_state == 'PLAYING':
+            return
+        
+        alpha = 60  # Very subtle overlay
+        font = self.font_small
+        
+        # Zone indicators (very subtle)
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        
+        # Left zone - Move Left
+        left_zone_w = int(WINDOW_WIDTH * 0.30)
+        pygame.draw.rect(overlay, (100, 200, 255, alpha//2), 
+                        (0, 0, left_zone_w, WINDOW_HEIGHT))
+        
+        # Right zone - Move Right  
+        right_zone_x = int(WINDOW_WIDTH * 0.70)
+        pygame.draw.rect(overlay, (100, 200, 255, alpha//2),
+                        (right_zone_x, 0, WINDOW_WIDTH - right_zone_x, WINDOW_HEIGHT))
+        
+        # Bottom zone - Soft Drop
+        bottom_zone_y = int(WINDOW_HEIGHT * 0.85)
+        pygame.draw.rect(overlay, (100, 255, 100, alpha//2),
+                        (0, bottom_zone_y, WINDOW_WIDTH, WINDOW_HEIGHT - bottom_zone_y))
+        
+        surface.blit(overlay, (0, 0))
+        
+        # Draw arrow icons in corners (using text as fallback)
+        hint_color = (255, 255, 255, 180)
+        
+        # Left arrow
+        left_txt = font.render("◀", True, (200, 200, 255))
+        surface.blit(left_txt, (20, WINDOW_HEIGHT // 2))
+        
+        # Right arrow
+        right_txt = font.render("▶", True, (200, 200, 255))
+        surface.blit(right_txt, (WINDOW_WIDTH - 40, WINDOW_HEIGHT // 2))
+        
+        # Rotate hint (center)
+        rotate_txt = font.render("↻ TAP", True, (255, 220, 150))
+        rect = rotate_txt.get_rect(center=(WINDOW_WIDTH // 2, 60))
+        surface.blit(rotate_txt, rect)
+        
+        # Drop hint (bottom)
+        drop_txt = font.render("▼ DROP", True, (150, 255, 150))
+        rect = drop_txt.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 30))
+        surface.blit(drop_txt, rect)
 
     def trigger_boss_garbage(self):
         # Bowser attacks! Push garbage line from bottom
@@ -2999,7 +3427,8 @@ class Tetris:
             self.sound_manager.play('damage')
             
             # Show dramatic "RETRY" sequence
-            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//3, f"LIVES: {self.lives}", (255, 50, 50)))
+            # Show dramatic "RETRY" sequence
+            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//3, f"LOST A LIFE! {self.lives} LEFT", (255, 50, 50)))
             self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "TRY AGAIN!", (255, 215, 0)))
             
             # Clear the grid but keep progress
@@ -3398,36 +3827,53 @@ class Tetris:
                  return
 
             if self.game_state == 'WORLD_CLEAR':
-             # RESULTS SCREEN ANIMATION
-             self.transition_timer += dt
-             if self.transition_timer >= 5.0: # 5 Seconds Results
-                 self.transition_timer = 0
-                 
-                 # END-OF-LEVEL BONUS: Lines × Stomps = Bonus Coins!
-                 lines = getattr(self, 'lines_this_level', 0)
-                 stomps = getattr(self, 'turtles_stomped', 0)
-                 bonus = lines * stomps
-                 
-                 print(f"[BONUS] Level Complete! Lines: {lines} × Stomps: {stomps} = {bonus} coins")
-                 
-                 if bonus > 0:
-                     self.coins += bonus
-                     self.score += bonus * 10  # Also add to score
-                     # Show bonus breakdown - BIG TEXT
-                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 120, f"LINES: {lines}", (100, 255, 100), size='med'))
-                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 60, f"STOMPS: {stomps}", (255, 100, 100), size='med'))
-                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"─────────", C_WHITE, size='med'))
-                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, f"BONUS: {bonus} COINS!", (255, 215, 0), size='big'))
-                     self.sound_manager.play('coin')
-                 
-                 # Reset counters for next level
-                 self.turtles_stomped = 0
-                 self.lines_this_level = 0
-                 
-                 # Advance to next level
-                 self.game_state = 'PLAYING'
-                 self.reset_level()
-             return
+                # RESULTS SCREEN ANIMATION
+                self.transition_timer += dt
+                if self.transition_timer >= 5.0: # 5 Seconds Results
+                    self.transition_timer = 0
+                    
+                    # END-OF-LEVEL BONUS: Lines × Stomps = Bonus Coins!
+                    lines = getattr(self, 'lines_this_level', 0)
+                    stomps = getattr(self, 'turtles_stomped', 0)
+                    bonus = lines * stomps
+                    
+                    print(f"[BONUS] Level Complete! Lines: {lines} × Stomps: {stomps} = {bonus} coins")
+                    
+                    if bonus > 0:
+                        self.coins += bonus
+                        self.score += bonus * 10  # Also add to score
+                        # Show bonus breakdown - BIG TEXT
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 120, f"LINES: {lines}", (100, 255, 100), size='med'))
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 - 60, f"STOMPS: {stomps}", (255, 100, 100), size='med'))
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, f"─────────", C_WHITE, size='med'))
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 80, f"BONUS: {bonus} COINS!", (255, 215, 0), size='big'))
+                        self.sound_manager.play('coin')
+                    
+                    # Reset counters for next level
+                    self.turtles_stomped = 0
+                    self.lines_this_level = 0
+                    
+                    # Advance to next level
+                    self.game_state = 'PLAYING'
+                    self.reset_level()
+                    return
+
+                # ANIMATE PARTICLES DURING WORLD CLEAR
+                for e in self.effects[:]:
+                    if isinstance(e, dict):
+                        # Standard particle
+                        e['x'] += e['vx'] * dt; e['y'] += e['vy'] * dt; e['vy'] += 800 * dt
+                        e['life'] -= dt * 1.5
+                        if e['life'] <= 0: self.effects.remove(e)
+                    elif hasattr(e, 'update'):
+                        e.update(dt)
+                
+                # Also update popups for "BOSS DEFEATED" text
+                for p in self.popups[:]:
+                    p.update(dt)
+                    if p.life <= 0: self.popups.remove(p)
+                    
+                return
 
             self.total_time += dt
             
@@ -3520,12 +3966,30 @@ class Tetris:
                     self.p_wing_active = False
                     self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "P-WING EXPIRED", C_WHITE))
 
+
             # Boss Garbage - More forgiving timing
             if getattr(self, 'is_boss_level', False) and self.game_state == 'PLAYING':
+                if not hasattr(self, 'boss_garbage_timer'): self.boss_garbage_timer = 20.0
                 self.boss_garbage_timer -= dt
                 if self.boss_garbage_timer <= 0:
                     self.trigger_boss_garbage()
-                    self.boss_garbage_timer = 15.0 - min(3.0, self.world * 0.3)  # Gentler scaling
+                    self.boss_garbage_timer = 15.0 - min(5.0, self.world * 1.0) # Better scaling
+                
+                # Update Boss Timer
+                if hasattr(self, 'boss_timer') and self.boss_timer > 0:
+                    self.boss_timer -= dt
+                    if self.boss_timer <= 0:
+                        self.boss_timer = 0
+                        self.lives -= 1 
+                        self.hearts = self.max_hearts
+                        self.sound_manager.play('damage')
+                        self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, "TIME UP!", C_RED, size='big'))
+                        if self.lives <= 0: 
+                            self.game_state = 'GAMEOVER'
+                        else:
+                            # Reset timer if still alive? Or fail the level?
+                            self.boss_timer = 100.0
+                            self.popups.append(PopupText(WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 60, "TRY AGAIN!", C_WHITE))
 
             # Antigravity Logic
             if self.antigravity_active:
@@ -3568,7 +4032,8 @@ class Tetris:
                                     if grid_y >= self.big_boss.y - 1.5 and grid_y <= self.big_boss.y + 0.5:
                                         hit = True; break
                             if hit:
-                                damage = 20 if self.key_down_held else 10
+                                if self.key_down_held: damage = 50 # Hard drop HUGE CRIT
+                                else: damage = 25
                                 self.damage_boss(damage, "HIT")
                                 
                                 # Reset piece if it hits the boss
@@ -3627,19 +4092,31 @@ class Tetris:
                 elif self.level == 2: 
                     if r < 0.20: t = Blooper(tetris=self)
                     elif r < 0.40: t = RedTurtle(tetris=self)
+                    elif r < 0.50: t = CheepCheep(tetris=self) # New Character!
                     else: t = Turtle(tetris=self)
                 elif self.level == 3:
                     if r < 0.15: t = HammerBro(tetris=self)
                     elif r < 0.30: t = Blooper(tetris=self)
+                    elif r < 0.45: t = CheepCheep(tetris=self)
                     else: t = Turtle(tetris=self)
                 else: 
+                    # Regular Levels: Mix of enemies
                     if r < 0.10: t = HammerBro(tetris=self)
                     elif r < 0.20: t = Blooper(tetris=self)
                     elif r < 0.30: t = Piranha(tetris=self)
-                    elif r < 0.45: t = Spiny(tetris=self)
-                    elif r < 0.60: t = RedTurtle(tetris=self)
+                    elif r < 0.40: t = CheepCheep(tetris=self)
+                    elif r < 0.55: t = Spiny(tetris=self)
+                    elif r < 0.70: t = RedTurtle(tetris=self)
                     else: t = Turtle(tetris=self)
+                
+                # Boss Level Override: Only spawn 'Ammo' (Koopas) or Powerups
+                if self.is_boss_level:
+                    if r < 0.2: t = MagicMushroom(self) # Help the player!
+                    elif r < 0.6: t = Turtle(tetris=self)
+                    else: t = RedTurtle(tetris=self) # Red shells act as better projectiles
+                
                 self.turtles.append(t)
+
 
             for t in self.turtles[:]:
                 try:
@@ -3791,6 +4268,13 @@ class Tetris:
             if hasattr(self, 'gesture_controls') and self.game_state == 'PLAYING':
                 game_time = pygame.time.get_ticks() / 1000.0
                 self.gesture_controls.draw(target, game_time)
+                
+                # Draw mobile control hints (zones and arrows)
+                self.draw_mobile_controls(target)
+                
+                # Show tutorial on first level only
+                if getattr(self, 'show_gesture_tutorial', False) and self.level == 1:
+                    self.gesture_controls.draw_tutorial(target, self.font_small)
             
             # Draw Mario Helper running across screen
             if self.game_state == 'PLAYING':
@@ -3889,6 +4373,29 @@ class Tetris:
         s_txt = self.font_small.render(f"MUSIC: {tr[:14]}", True, C_WHITE)
         target.blit(s_txt, s_txt.get_rect(center=self.song_btn_rect.center))
 
+        # BOSS TIMER DISPLAY (Overrides center UI if Boss Level)
+        if getattr(self, 'is_boss_level', False) and hasattr(self, 'boss_timer'):
+             # Draw distinct timer box below the top bar
+             timer_rect = pygame.Rect(WINDOW_WIDTH//2 - 60, 60, 120, 40)
+             
+             # Flashing Red if low time
+             bg_col = (50, 0, 0)
+             txt_col = C_WHITE
+             if self.boss_timer < 30:
+                 if int(self.boss_timer * 4) % 2 == 0: 
+                      bg_col = (200, 0, 0)
+                      txt_col = (255, 255, 0)
+             
+             pygame.draw.rect(target, bg_col, timer_rect, border_radius=10)
+             pygame.draw.rect(target, C_WHITE, timer_rect, 2, border_radius=10)
+             
+             t_str = f"{int(self.boss_timer)}"
+             t_surf = self.font_big.render(t_str, True, txt_col)
+             target.blit(t_surf, t_surf.get_rect(center=timer_rect.center))
+             
+             lbl = self.font_small.render("TIME", True, C_WHITE)
+             target.blit(lbl, lbl.get_rect(center=(timer_rect.centerx, timer_rect.top - 8)))
+
         # Settings (Gear)
         self.settings_btn_rect = pygame.Rect(ui_x + 420, ui_y + 5, 40, 40)
         pygame.draw.rect(target, (60, 60, 80), self.settings_btn_rect, border_radius=8)
@@ -3974,38 +4481,41 @@ class Tetris:
                 p.draw(self.game_surface, {'small': self.font_small, 'med': self.font_med, 'big': self.font_big})
                 
             if getattr(self, 'show_level_intro', False):
-             self.level_intro_timer -= 0.016
-             if self.level_intro_timer <= 0: self.show_level_intro = False
-             
-             cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 100
-             
-             # Theme accent color
-             accent = getattr(self, 'theme_accent', C_NEON_PINK)
-             theme_name = getattr(self, 'level_theme', 'NEON')
-             
-             # DRAW PREMIUM BANNER BOX
-             banner_w, banner_h = 640, 120
-             banner_rect = pygame.Rect(cx-banner_w//2, cy-80, banner_w, banner_h)
-             s_banner = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
-             pygame.draw.rect(s_banner, (0, 0, 0, 180), (0, 0, banner_w, banner_h), border_radius=20)
-             pygame.draw.rect(s_banner, accent, (0, 0, banner_w, banner_h), 3, border_radius=20)
-             self.game_surface.blit(s_banner, banner_rect)
+                self.level_intro_timer -= 0.016
+                if self.level_intro_timer <= 0: self.show_level_intro = False
+                
+                cx, cy = WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 100
+                
+                # Theme accent color
+                accent = getattr(self, 'theme_accent', C_NEON_PINK)
+                theme_name = getattr(self, 'level_theme', 'NEON')
+                
+                # DRAW PREMIUM BANNER BOX
+                if not getattr(self, '_banner_surface', None):
+                    banner_w, banner_h = 640, 120
+                    self._banner_surface = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
+                    pygame.draw.rect(self._banner_surface, (0, 0, 0, 180), (0, 0, banner_w, banner_h), border_radius=20)
+                
+                banner_rect = self._banner_surface.get_rect(center=(cx, cy-20))
+                # Re-draw the colored border on the cached surface
+                pygame.draw.rect(self._banner_surface, accent, (0, 0, 640, 120), 3, border_radius=20)
+                self.game_surface.blit(self._banner_surface, banner_rect)
 
-             txt1 = self.font_big.render(f"WORLD {self.world}-{self.level_in_world}", True, C_WHITE)
-             txt_theme = self.font_med.render(f"~ {theme_name} ~", True, accent)
-             
-             self.game_surface.blit(txt1, txt1.get_rect(center=(cx, cy-30)))
-             self.game_surface.blit(txt_theme, txt_theme.get_rect(center=(cx, cy+25)))
+                txt1 = self.font_big.render(f"WORLD {self.world}-{self.level_in_world}", True, C_WHITE)
+                txt_theme = self.font_med.render(f"~ {theme_name} ~", True, accent)
+                
+                self.game_surface.blit(txt1, txt1.get_rect(center=(cx, cy-30)))
+                self.game_surface.blit(txt_theme, txt_theme.get_rect(center=(cx, cy+25)))
 
-             for e in self.effects:
-                 if isinstance(e, dict) and e.get('type') == 'particle':
-                      alpha = int(255 * e['life'])
-                      s = pygame.Surface((4,4))
-                      s.fill(e['color'])
-                      s.set_alpha(alpha)
-                      self.game_surface.blit(s, (e['x'], e['y']))
-                 elif hasattr(e, 'draw'):
-                      e.draw(self.game_surface)
+            for e in self.effects:
+                if isinstance(e, dict) and e.get('type') == 'particle':
+                    alpha = int(255 * e['life'])
+                    s = pygame.Surface((4,4))
+                    s.fill(e['color'])
+                    s.set_alpha(alpha)
+                    self.game_surface.blit(s, (e['x'], e['y']))
+                elif hasattr(e, 'draw'):
+                    e.draw(self.game_surface)
 
             # Draw Ghost Piece
             ghost_y = self.current_piece.y
@@ -4015,9 +4525,12 @@ class Tetris:
             self.current_piece.y -= g_dir
             
             # Use a transparent surface for the ghost blocks for better alpha blending
-            ghost_block_surf = pygame.Surface((BLOCK_SIZE, BLOCK_SIZE), pygame.SRCALPHA)
-            ghost_block_surf.fill(C_GHOST)
-            pygame.draw.rect(ghost_block_surf, (255, 255, 255, 100), (0, 0, BLOCK_SIZE, BLOCK_SIZE), 1)
+            if not getattr(self, '_ghost_surface', None):
+                self._ghost_surface = pygame.Surface((BLOCK_SIZE, BLOCK_SIZE), pygame.SRCALPHA)
+                self._ghost_surface.fill(C_GHOST)
+                pygame.draw.rect(self._ghost_surface, (255, 255, 255, 100), (0, 0, BLOCK_SIZE, BLOCK_SIZE), 1)
+            
+            ghost_block_surf = self._ghost_surface
 
             for bx, by in self.current_piece.blocks:
                 px = PLAYFIELD_X + (self.current_piece.x + bx) * BLOCK_SIZE
@@ -4364,6 +4877,8 @@ class Tetris:
             # Special Overlays
             if self.game_state == 'WORLD_CLEAR':
                  self.draw_world_clear()
+            elif self.game_state == 'GAMEOVER':
+                 self.draw_game_over()
                 
 
             # Draw Scanline Overlay (Retro Vibe)
@@ -4733,6 +5248,14 @@ class Tetris:
                 # Get position and map to game coordinates
 
                 if event.type == pygame.FINGERDOWN:
+                    # DETECTED REAL TOUCH INPUT - enable mobile features!
+                    if not getattr(self, 'is_touch_device', False):
+                        self.is_touch_device = True
+                        self.show_mobile_hints = True
+                        if self.level == 1:  # Only show tutorial on first level
+                            self.show_gesture_tutorial = True
+                        print("[Mobile] Touch device detected - enabling mobile UI")
+                    
                     sw, sh = self.screen.get_size()
                     real_pos = (int(event.x * sw), int(event.y * sh))
                     touch_pos = self.get_game_coords(real_pos)
@@ -4788,6 +5311,11 @@ class Tetris:
                 if self.game_state == 'PLAYING' and not ui_handled:
                     if hasattr(self, 'gesture_controls'):
                         self.gesture_controls.handle_touch_down(touch_pos, game_time)
+                        
+                        # Dismiss tutorial after first touch during gameplay
+                        if getattr(self, 'show_gesture_tutorial', False):
+                            self.show_gesture_tutorial = False
+                            self.popups.append(PopupText(WINDOW_WIDTH//2, 100, "CONTROLS READY!", (100, 255, 100)))
             
             # Handle touch/finger move for drag tracking
             if event.type == pygame.FINGERMOTION:
