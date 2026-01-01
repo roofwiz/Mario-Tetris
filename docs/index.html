@@ -5,24 +5,26 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Mario Tetris v1.13</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
     <style>
         body {
             margin: 0;
             background-color: #000;
-            color: #0f0;
-            font-family: monospace;
+            color: #fff;
+            font-family: sans-serif;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
             overflow: hidden;
+            cursor: pointer;
         }
 
         #status {
             margin-bottom: 10px;
-            font-size: 18px;
+            font-size: 20px;
+            font-weight: bold;
         }
 
         progress {
@@ -46,13 +48,22 @@
             z-index: 10;
             text-align: center;
         }
+
+        .tap-msg {
+            margin-top: 20px;
+            color: #0f0;
+            display: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
     </style>
 </head>
 
-<body>
+<body onclick="onScreenClick()">
     <div id="transfer">
         <div id="status">Loading Mario Tetris v1.13...</div>
         <progress value="0" max="100" id="progress"></progress>
+        <div id="tap-msg" class="tap-msg">Tap Anywhere to Start</div>
     </div>
 
     <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
@@ -65,41 +76,43 @@ import platform
 import json
 from pathlib import Path
 
-async def main():
-    # 1. Mount the APK
-    apk = "mario-tetris-v113.apk"
-    bundle = "mario-tetris"
-    appdir = Path(f"/data/data/{bundle}")
-    if not appdir.exists(): appdir.mkdir()
+# 1. Mount the APK
+apk = "mario-tetris-v113.apk"
+bundle = "mario-tetris"
+appdir = Path(f"/data/data/{bundle}")
+if not appdir.exists(): appdir.mkdir()
 
-    cfg = {
-        "io": "url",
-        "type":"mount",
-        "mount" : { "point" : appdir.as_posix(), "path" : "/", },
-        "path" : f"/ => {appdir.as_posix()}",
-    }
+cfg = {
+    "io": "url",
+    "type":"mount",
+    "mount" : { "point" : appdir.as_posix(), "path" : "/", },
+    "path" : f"/ => {appdir.as_posix()}",
+}
 
-    track = platform.window.MM.prepare(apk, json.dumps(cfg))
-    
-    # 2. Progress loop
+track = platform.window.MM.prepare(apk, json.dumps(cfg))
+
+# 2. Wait for download
+async def wait_for_mount():
     while not track.ready:
         await asyncio.sleep(.1)
-
-    # 3. Import and Run
-    sys.path.append(appdir.as_posix())
     
-    # Wait for the official "Ready to start!" click
+    # Show tap message
+    platform.window.document.getElementById("tap-msg").style.display = "block"
+    platform.window.document.getElementById("status").innerHTML = "READY!"
+    
+    # 3. Wait for User Click
     while not platform.window.MM.UME:
         await asyncio.sleep(.1)
 
-    # Hide loader UI
+    # 4. Hide UI and Launch
     platform.window.document.getElementById("transfer").style.display = "none"
+    sys.path.append(appdir.as_posix())
     
     import main
     game = main.Tetris()
     await game.run()
 
-asyncio.run(main())
+asyncio.run(wait_for_mount())
 # --></script>
 
     <script type="application/javascript">
@@ -110,6 +123,10 @@ asyncio.run(main())
             ume_block: 1,
             autorun: 1,
             PYBUILD: "3.12"
+        }
+
+        function onScreenClick() {
+            if (window.MM) window.MM.UME = true;
         }
     </script>
 </body>
