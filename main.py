@@ -599,6 +599,7 @@ class Turtle:
                 self.state = 'landed'
                 self.move_timer = 0
                 self.landed_timer = 0
+                self.vx = self.direction * (self.speed * 0.8) # Reset horizontal speed
                 return False
             
             # If we fall past the screen entirely
@@ -612,38 +613,39 @@ class Turtle:
                 self.state = 'falling_out'
                 return False
 
-            self.move_timer += delta_time
-            if self.move_timer >= self.move_interval:
-                self.move_timer -= self.move_interval
-                next_x = int(self.x + self.direction)
+            # Smooth horizontal movement in landed state
+            self.x += self.vx * delta_time
+            
+            # Bounce at edges or blocks
+            next_x = self.x + (0.5 if self.direction == 1 else -0.5)
+            block_in_front = False
+            if 0 <= int(next_x) < GRID_WIDTH:
+                if game_grid.grid[int(self.y)][int(next_x)] is not None:
+                    block_in_front = True
+            else:
+                block_in_front = True # Screen edge
                 
-                if 0 <= next_x < GRID_WIDTH:
-                    # Logic to check walls and holes
-                    block_below_next = int(self.y) + 1
-                    block_in_front = 0 <= next_x < GRID_WIDTH and game_grid.grid[int(self.y)][next_x] is not None
-                    has_ground = (block_below_next < GRID_HEIGHT and game_grid.grid[block_below_next][next_x] is not None) or (block_below_next == GRID_HEIGHT)
-                    
-                    if self.enemy_type == 'red':
-                         # SMART TURN LOGIC
-                         if block_in_front or not has_ground: 
-                             if self.turns_at_edge < 3: # Turn around 3 times max
-                                 self.direction *= -1
-                                 self.turns_at_edge += 1
-                             else:
-                                 # Allowed to fall
-                                 self.x = next_x
-                                 self.state = 'active'
-                         else: 
-                             self.x = next_x
-                             self.state = 'landed'
-                    else: 
-                        # Green / Spiny fall off edges blindly
-                        if not has_ground and not block_in_front:
-                            self.state = 'active'; self.x = next_x
-                        elif block_in_front: self.direction *= -1
-                        else: self.x = next_x
-                else:
-                    self.direction *= -1 
+            if block_in_front:
+                self.direction *= -1
+                self.vx = self.direction * (self.speed * 0.8)
+                self.x = max(0, min(GRID_WIDTH - 1, self.x))
+            
+            # Check for holes (Red turtles are smart)
+            if self.enemy_type == 'red':
+                block_below_next = int(self.y) + 1
+                next_grid_x = int(self.x + self.direction * 0.6)
+                if 0 <= next_grid_x < GRID_WIDTH:
+                    has_ground = (block_below_next < GRID_HEIGHT and game_grid.grid[block_below_next][next_grid_x] is not None) or (block_below_next == GRID_HEIGHT)
+                    if not has_ground:
+                        self.direction *= -1
+                        self.vx = self.direction * (self.speed * 0.8)
+            
+            # Fall off edges (Green/Spiny)
+            if self.enemy_type != 'red':
+                block_below = int(self.y) + 1
+                if block_below < GRID_HEIGHT and game_grid.grid[block_below][int(self.x + 0.5)] is None:
+                    self.state = 'active'
+                    self.vy = self.speed
         return False
 
     def draw(self, surface):
@@ -1657,9 +1659,9 @@ class BonusGame:
 
 class Lakitu(Turtle):
     def __init__(self, tetris_ref):
+        self.enemy_type = 'lakitu'  # Set BEFORE super() so Turtle handles frames right
         super().__init__(tetris=tetris_ref)
         self.tetris = tetris_ref
-        self.enemy_type = 'lakitu'  # Make Lakitu identifiable
         self.y = 1
         self.x = -5
         self.speed = 3.0
@@ -1669,8 +1671,8 @@ class Lakitu(Turtle):
         self.hover_offset = 0
         
         # Load sprites - Make Lakitu bigger (was 2.0)
-        self.sprite_default = tetris_ref.sprite_manager.get_sprite('lakitu', 'default', scale_factor=3.5)
-        self.sprite_throw = tetris_ref.sprite_manager.get_sprite('lakitu', 'throw', scale_factor=3.5)
+        self.sprite_default = tetris_ref.sprite_manager.get_sprite('lakitu', 'default', scale_factor=2.5)
+        self.sprite_throw = tetris_ref.sprite_manager.get_sprite('lakitu', 'throw', scale_factor=2.5)
         self.is_throwing = False
         self.pending_spinies = []  # Queue to avoid modifying turtles during iteration
         
@@ -3055,7 +3057,11 @@ class Tetris:
         
         def place(x, y, c, t='brick'):
             if 0 <= x < GRID_WIDTH and 0 <= y < GRID_HEIGHT:
-                self.grid.grid[y][x] = Block(c, t)
+                block = Block(c, t)
+                # POPULATE BOTH GRIDS to ensure they appear in all world themes
+                self.grid.grid_neon[y][x] = block
+                self.grid.grid_shadow[y][x] = block
+                self.grid.grid = self.grid.grid_neon # Keep pointer synced
 
         # 8 Distinct Patterns Rotated
         pattern_type = total_level % 8 
