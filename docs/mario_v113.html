@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+    <meta charset="utf-8">
+    <title>Mario Tetris v1.13 - FINAL TEST</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #status {
+            margin-bottom: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #0f0;
+        }
+
+        progress {
+            width: 300px;
+            height: 20px;
+        }
+
+        canvas.emscripten {
+            border: 0px none;
+            background-color: transparent;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #transfer {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+        }
+
+        .footer {
+            margin-top: 50px;
+            color: #555;
+            font-size: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="transfer">
+        <div id="status">INITIALIZING v1.1.3B...</div>
+        <progress value="0" max="100" id="progress"></progress>
+        <div class="footer">BUILD: 2026-01-01-1025</div>
+    </div>
+
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=250
+        data-CONSOLE=25 data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys
+import asyncio
+import platform
+import json
+import os
+from pathlib import Path
+
+async def main():
+    print("--- MARIO BOOT INITIALIZED ---")
+    apk = "mario-tetris-v113-FIX.apk"
+    bundle = "mario-tetris-final"
+    appdir = Path(f"/data/data/{bundle}")
+    if not appdir.exists(): appdir.mkdir()
+
+    cfg = {
+        "io": "url",
+        "type":"mount",
+        "mount" : { "point" : appdir.as_posix(), "path" : "/", },
+        "path" : f"/ => {appdir.as_posix()}",
+    }
+
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+    
+    while not track.ready:
+        await asyncio.sleep(.1)
+    
+    print(f"MOUNT COMPLETE. Files: {os.listdir(appdir)}")
+    
+    # Wait for the official Pygbag UME (Ready to start button)
+    while not platform.window.MM.UME:
+        await asyncio.sleep(.1)
+
+    print("UME UNLOCKED - STARTING ENGINE")
+    platform.window.document.getElementById("transfer").style.display = "none"
+    sys.path.append(appdir.as_posix())
+    
+    try:
+        import main
+        game = main.Tetris()
+        await game.run()
+    except Exception as e:
+        print(f"CRITICAL BOOT ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+
+asyncio.run(main())
+# --></script>
+
+    <script type="application/javascript">
+        config = {
+            xtermjs: "1",
+            _sdl2: "canvas",
+            user_canvas: 0,
+            ume_block: 1,
+            autorun: 0,
+            PYBUILD: "3.12"
+        }
+    </script>
+</body>
+
+</html>
