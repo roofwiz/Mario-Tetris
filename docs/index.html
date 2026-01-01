@@ -5,35 +5,29 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Mario Tetris v1.13</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
             margin: 0;
             background-color: #000;
-            color: #fff;
-            font-family: sans-serif;
-            width: 100vw;
-            height: 100vh;
+            color: #0f0;
+            font-family: monospace;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            height: 100vh;
             overflow: hidden;
-            cursor: pointer;
         }
 
         #status {
-            margin-bottom: 20px;
-            font-weight: bold;
-            font-size: 24px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+            margin-bottom: 10px;
+            font-size: 18px;
         }
 
         progress {
             width: 300px;
             height: 20px;
-            border-radius: 10px;
         }
 
         canvas.emscripten {
@@ -45,7 +39,6 @@
             position: absolute;
             top: 0;
             left: 0;
-            pointer-events: none;
         }
 
         #transfer {
@@ -53,23 +46,12 @@
             z-index: 10;
             text-align: center;
         }
-
-        .blink {
-            animation: blinker 1.5s linear infinite;
-            color: #0f0;
-        }
-
-        @keyframes blinker {
-            50% {
-                opacity: 0;
-            }
-        }
     </style>
 </head>
 
-<body onclick="onScreenClick()">
+<body>
     <div id="transfer">
-        <div id="status">Loading Mario Tetris...</div>
+        <div id="status">Loading Mario Tetris v1.13...</div>
         <progress value="0" max="100" id="progress"></progress>
     </div>
 
@@ -81,11 +63,10 @@ import sys
 import asyncio
 import platform
 import json
-import os
 from pathlib import Path
 
 async def main():
-    print("--- Loader Start ---")
+    # 1. Mount the APK
     apk = "mario-tetris-v113.apk"
     bundle = "mario-tetris"
     appdir = Path(f"/data/data/{bundle}")
@@ -100,38 +81,23 @@ async def main():
 
     track = platform.window.MM.prepare(apk, json.dumps(cfg))
     
-    # 2. Wait for download/mount
+    # 2. Progress loop
     while not track.ready:
         await asyncio.sleep(.1)
-    
-    print("--- Download Complete ---")
-    
-    # Update UI to tell user to click
-    status_msg = platform.window.document.getElementById("status")
-    status_msg.innerHTML = "TAP TO PLAY"
-    status_msg.className = "blink"
-    
-    # 3. Setup Python path
+
+    # 3. Import and Run
     sys.path.append(appdir.as_posix())
     
-    # 4. Wait for User Click (UME)
+    # Wait for the official "Ready to start!" click
     while not platform.window.MM.UME:
         await asyncio.sleep(.1)
 
-    print("--- Starting Game ---")
-    # Hide the loader
+    # Hide loader UI
     platform.window.document.getElementById("transfer").style.display = "none"
-    platform.window.canvas.style.pointerEvents = "auto"
     
-    try:
-        import main
-        print("Import successful")
-        game = main.Tetris()
-        await game.run()
-    except Exception as e:
-        print(f"CRITICAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
+    import main
+    game = main.Tetris()
+    await game.run()
 
 asyncio.run(main())
 # --></script>
@@ -144,13 +110,6 @@ asyncio.run(main())
             ume_block: 1,
             autorun: 1,
             PYBUILD: "3.12"
-        }
-
-        function onScreenClick() {
-            console.log("Screen Clicked - Unlocking Audio");
-            if (window.MM) {
-                window.MM.UME = true;
-            }
         }
     </script>
 </body>
