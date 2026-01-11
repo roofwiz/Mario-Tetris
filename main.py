@@ -14,6 +14,8 @@ import json
 import asyncio
 import math
 import sys
+from level_layouts import get_layout
+import time # Added by user
 
 # Early Mixer Hint for Pygbag/Web
 try:
@@ -101,6 +103,30 @@ WALL_KICK_DATA = {
 }
 
 # --- Global Helper Functions ---
+
+# --- Level Themes (Mario Style) ---
+LEVEL_THEMES = [
+    # 1. OVERWORLD (Sky Blue / Brown)
+    {'name': 'OVERWORLD', 'bg': (92, 148, 252), 'accent': (181, 101, 29), 'grid_alpha': 180},
+    # 2. UNDERGROUND (Black / Blue-Teal)
+    {'name': 'UNDERGROUND', 'bg': (15, 15, 15), 'accent': (0, 128, 136), 'grid_alpha': 120},
+    # 3. WATER WORLD (Deep Blue / Sea Green)
+    {'name': 'WATER WORLD', 'bg': (32, 56, 236), 'accent': (0, 168, 0), 'grid_alpha': 150},
+    # 4. CASTLE (Dark Grey / Fire Red)
+    {'name': 'CASTLE', 'bg': (32, 32, 32), 'accent': (216, 40, 0), 'grid_alpha': 200},
+    # 5. MUSHROOM (Dark Red / Peach)
+    {'name': 'MUSHROOM', 'bg': (139, 0, 0), 'accent': (255, 218, 185), 'grid_alpha': 160},
+    # 6. SNOW LAND (White-ish / Ice Blue)
+    {'name': 'SNOW LAND', 'bg': (240, 248, 255), 'accent': (0, 191, 255), 'grid_alpha': 140},
+    # 7. HAUNTED (Deep Purple / Ghost White)
+    {'name': 'HAUNTED', 'bg': (48, 25, 52), 'accent': (248, 248, 255), 'grid_alpha': 190},
+    # 8. SKY LAND (Cloud Blue / Vine Green)
+    {'name': 'SKY LAND', 'bg': (135, 206, 235), 'accent': (34, 139, 34), 'grid_alpha': 170},
+    # 9. DESERT (Sand / Pyramid Brown)
+    {'name': 'DESERT', 'bg': (244, 164, 96), 'accent': (139, 69, 19), 'grid_alpha': 160},
+    # 10. HYPERSPACE (Dark Space / Star Yellow)
+    {'name': 'HYPERSPACE', 'bg': (10, 0, 20), 'accent': (255, 215, 0), 'grid_alpha': 130},
+]
 def draw_block(screen, x, y, color):
     """Draws a single Tetris block on the grid."""
     px = PLAYFIELD_X + x * BLOCK_SIZE
@@ -260,7 +286,7 @@ class SpriteManager:
         except: return None
 
 class BackgroundElement:
-    def __init__(self, theme_type):
+    def __init__(self, theme_type, sprite_manager=None):
         self.type = theme_type
         self.x = random.randint(0, WINDOW_WIDTH)
         self.y = random.randint(0, WINDOW_HEIGHT)
@@ -270,23 +296,53 @@ class BackgroundElement:
         self.color = (255, 255, 255, 100)
         self.angle = random.uniform(0, 360)
         self.rotate_speed = random.uniform(-2, 2)
+        self.image = None
         
-        if theme_type == 'OCEAN':
-            self.color = (150, 220, 255, 80)
-            self.vy = random.uniform(-30, -10) # Bubbles rise
-            self.size = random.randint(3, 8)
-        elif theme_type == 'FIRE':
-            self.color = (255, 100, 30, 150)
-            self.vy = random.uniform(-60, -20) # Embers rise fast
-            self.size = random.randint(2, 5)
-        elif theme_type == 'FOREST':
-            self.color = (100, 200, 100, 120)
-            self.vy = random.uniform(20, 50) # Leaves fall
-            self.size = random.randint(6, 10)
-        elif theme_type == 'CRYSTAL':
-            self.color = (180, 240, 255, 180)
-            self.vy = random.uniform(5, 15)
-            self.size = random.randint(4, 7)
+        # Sprite Logic
+        if sprite_manager:
+            if theme_type == 'OVERWORLD':
+                 # Clouds
+                 self.image = sprite_manager.get_sprite('cloud', 'walk_1')
+                 if self.image: 
+                     self.vy = random.uniform(-5, 5)
+                     self.vx = random.uniform(5, 15)
+                     
+            elif theme_type == 'UNDERGROUND':
+                 # Brick Shards
+                 self.image = sprite_manager.get_sprite('blocks', 'brick_piece_1')
+                 if self.image: 
+                     self.vy = random.uniform(20, 60)
+                     
+            elif theme_type == 'WATER':
+                 # Bubbles -> use simple circle or specific bubble sprite if exists
+                 self.vy = random.uniform(-30, -10)
+                 self.color = (150, 220, 255, 80)
+                 
+            elif theme_type == 'CASTLE':
+                 # Embers
+                 self.color = (255, 100, 30, 150)
+                 self.vy = random.uniform(-40, -10)
+                 
+            elif theme_type == 'MUSHROOM':
+                 # Mushroom spots / tiny mushrooms
+                 self.image = sprite_manager.get_sprite('items', 'mushroom_1up')
+                 if self.image:
+                     self.image = pygame.transform.scale(self.image, (16, 16))
+                     
+        # Fallback physics per theme if no sprite
+        if not self.image:
+            if theme_type == 'OCEAN':
+                self.color = (150, 220, 255, 80)
+                self.vy = random.uniform(-30, -10)
+            elif theme_type == 'FIRE':
+                self.color = (255, 100, 30, 150)
+                self.vy = random.uniform(-60, -20)
+            elif theme_type == 'FOREST':
+                self.color = (100, 200, 100, 120)
+                self.vy = random.uniform(20, 50)
+            elif theme_type == 'CRYSTAL':
+                self.color = (180, 240, 255, 180)
+                self.vy = random.uniform(5, 15)
 
     def update(self, dt):
         self.x += self.vx * dt
@@ -299,23 +355,35 @@ class BackgroundElement:
         if self.x > WINDOW_WIDTH + 50: self.x = -50
 
     def draw(self, surface):
-        if self.type == 'OCEAN':
-            pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.size, 1)
-        elif self.type == 'FIRE':
-            glow = self.size * 2
-            s = pygame.Surface((glow*2, glow*2), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*self.color[:3], 100), (glow, glow), glow)
-            surface.blit(s, (int(self.x-glow), int(self.y-glow)))
-        elif self.type == 'FOREST':
-            points = [
-                (self.x, self.y - self.size),
-                (self.x + self.size, self.y),
-                (self.x, self.y + self.size),
-                (self.x - self.size, self.y)
-            ]
-            pygame.draw.polygon(surface, self.color, points)
+        if self.image:
+            # Draw sprite
+            h_w = self.image.get_width() // 2
+            h_h = self.image.get_height() // 2
+            # Simple rotation
+            if abs(self.rotate_speed) > 0.1:
+                rot_img = pygame.transform.rotate(self.image, self.angle)
+                surface.blit(rot_img, (int(self.x) - rot_img.get_width()//2, int(self.y) - rot_img.get_height()//2))
+            else:
+                surface.blit(self.image, (int(self.x) - h_w, int(self.y) - h_h))
         else:
-            pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), self.size, self.size))
+            # Fallback shapes
+            if self.type in ['OCEAN', 'WATER']:
+                pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.size, 1)
+            elif self.type in ['FIRE', 'CASTLE']:
+                glow = self.size * 2
+                s = pygame.Surface((glow*2, glow*2), pygame.SRCALPHA)
+                pygame.draw.circle(s, (*self.color[:3], 100), (glow, glow), glow)
+                surface.blit(s, (int(self.x-glow), int(self.y-glow)))
+            elif self.type == 'FOREST':
+                points = [
+                    (self.x, self.y - self.size),
+                    (self.x + self.size, self.y),
+                    (self.x, self.y + self.size),
+                    (self.x - self.size, self.y)
+                ]
+                pygame.draw.polygon(surface, self.color, points)
+            else:
+                pygame.draw.rect(surface, self.color, (int(self.x), int(self.y), self.size, self.size))
 
 class Turtle:
     ENEMY_TYPE = 'green'
@@ -1817,6 +1885,11 @@ class Block:
             cat = self.sprite_data.get('category')
             name = self.sprite_data.get('sprite')
             
+            # Support pre-loaded/modified Surfaces (e.g. tinted blocks)
+            if isinstance(name, pygame.Surface):
+                return name
+
+            
             # 2. Animated Enemies
             if cat in ['koopa_green', 'koopa_red', 'spiny']:
                 # Use frames. Note: we need to handle "walk" prefix or not
@@ -1922,8 +1995,18 @@ class Grid:
             if None in cols:
                 rows_to_keep.append(cols)
             else:
-                lines_cleared += 1
-                completed_line_indices.append(y)  # Save line index for animation
+                # Check for unclearable blocks
+                unclearable = False
+                for block in cols:
+                    if block and getattr(block, 'type', '') in ['solid', 'ground']:
+                        unclearable = True
+                        break
+                
+                if unclearable:
+                     rows_to_keep.append(cols)
+                else:
+                    lines_cleared += 1
+                    completed_line_indices.append(y)  # Save line index for animation
                 # Check for special blocks in this line
                 has_garbage = False
                 for block in cols:
@@ -1942,27 +2025,28 @@ class Grid:
         
         return lines_cleared, special_events, completed_line_indices
 
-    def draw(self, screen, total_time, draw_bg=True, alpha=255, level=1):
+    def draw(self, screen, total_time, draw_bg=True, alpha=255, level=1, bg_color=None, accent_color=None):
         # Draw Background 
         if draw_bg:
             bg_rect = (PLAYFIELD_X, PLAYFIELD_Y, PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT)
             
-            # Use WORLD_THEMES for dynamic background
-            # level is passed or we default to overworld
-            world_idx = ((level - 1) // 4) + 1
-            world_cfg = WORLD_THEMES.get(world_idx, WORLD_THEMES[1])
-            bg_col = world_cfg['bg']
+            # Use passed color or default
+            bg_col = bg_color if bg_color else (20, 20, 40)
             
             # Darken the background color slightly for the playfield
             dark_bg = [max(0, c - 40) for c in bg_col]
             
             # Premium Background: Vertical Gradient
             r, g, b = dark_bg
-            for i in range(PLAYFIELD_HEIGHT):
-                # Gradient factor (darker at bottom)
-                f = 1.0 - (i / PLAYFIELD_HEIGHT) * 0.3
-                col = (int(r * f), int(g * f), int(b * f))
-                pygame.draw.line(screen, col, (PLAYFIELD_X, PLAYFIELD_Y + i), (PLAYFIELD_X + PLAYFIELD_WIDTH, PLAYFIELD_Y + i))
+            # Fill with solid first for safety
+            pygame.draw.rect(screen, dark_bg, bg_rect)
+            
+            # OVERLAY Gradient
+            # for i in range(PLAYFIELD_HEIGHT):
+            #     # Gradient factor (darker at bottom)
+            #     f = 1.0 - (i / PLAYFIELD_HEIGHT) * 0.3
+            #     col = (int(r * f), int(g * f), int(b * f))
+            #     pygame.draw.line(screen, col, (PLAYFIELD_X, PLAYFIELD_Y + i), (PLAYFIELD_X + PLAYFIELD_WIDTH, PLAYFIELD_Y + i))
             
             # Pattern Overlay: Subtle Grid
             grid_surf = pygame.Surface((PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT), pygame.SRCALPHA)
@@ -1973,7 +2057,7 @@ class Grid:
             screen.blit(grid_surf, (PLAYFIELD_X, PLAYFIELD_Y))
             
             # Border Glow
-            glow_color = (100, 100, 255) if level % 2 == 0 else (255, 100, 100)
+            glow_color = accent_color if accent_color else ((100, 100, 255) if level % 2 == 0 else (255, 100, 100))
             
             # Glow Effect
             for i in range(5):
@@ -1993,6 +2077,14 @@ class Grid:
         # 2. Draw Active World - 100% Opacity
         self._render_layer(screen, self.grid, total_time, alpha=255)
 
+        # 3. Draw Ground Row (Decorative)
+        if alpha == 255 and hasattr(self, 'ground_row') and self.ground_row:
+             py = PLAYFIELD_Y + GRID_HEIGHT * BLOCK_SIZE
+             for x, sprite in enumerate(self.ground_row):
+                 if sprite:
+                     px = PLAYFIELD_X + x * BLOCK_SIZE
+                     screen.blit(sprite, (px, py))
+                     
     def _render_layer(self, screen, grid_data, total_time, alpha=255):
         target_surf = screen
         ox, oy = PLAYFIELD_X, PLAYFIELD_Y
@@ -2632,8 +2724,6 @@ class Tetris:
         # Basic Stats (Init first to prevent draw crashes)
         self.auto_play = False 
         self.ai_bot = TetrisBot(self) # Initialize Bot
-        self.active_world = 'NEON'
-        self.grid.set_world('NEON')
         self.shift_cooldown = 0
         self.shadow_multiplier = 1
         
@@ -2741,11 +2831,14 @@ class Tetris:
         self.reset_level()
 
     def reset_level(self):
-        # Clear Grid for new level
+        self.sprite_manager = self.sprite_manager # This line is redundant if sprite_manager is already self.sprite_manager
         self.grid.grid_neon = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
         self.grid.grid_shadow = [[None for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        self.grid.grid = self.grid.grid_neon # Reset pointer
-
+        self.grid.grid = self.grid.grid_neon # Pointer to current world
+        self.grid.ground_row = [] # For decorative bottom row
+        
+        self.flash_lines = []
+        self.line_flash_timer = 0
         self.lines_this_level = 0
         if self.world == 1 and self.level_in_world == 1:
             self.lines_required = 5  # Easy first level
@@ -2766,11 +2859,6 @@ class Tetris:
         
             # self.sound_manager.play('music') # Removed legacy call
         
-        # LEVEL THEMES - Different visuals per level
-        level_idx = (self.world - 1) * 4 + (self.level_in_world - 1)
-        theme_names = ['NEON', 'OCEAN', 'FOREST', 'FIRE', 'SHADOW', 'CRYSTAL', 'SUNSET', 'MIDNIGHT']
-        self.level_theme = theme_names[level_idx % len(theme_names)]
-        
         # Apply theme colors
         self.apply_level_theme()
         
@@ -2781,29 +2869,154 @@ class Tetris:
         # Announcement
         self.show_level_intro = True
         self.level_intro_timer = 4.0
+        
+        # 3.0 Feature: Level Layouts (Pre-placed blocks)
+        self.apply_layout()
+
+    def apply_layout(self):
+        """Parse ASCII map and place blocks in grid"""
+        layout = get_layout(self.world, self.level_in_world)
+        if not layout: return
+
+        # Mapping chars to sprite keys
+        # Use theme-specific sprites where possible
+        theme_block_map = {
+            'OVERWORLD': {'#': 'ground', 'B': 'brick_brown', 'X': 'block_stone'},
+            'UNDERGROUND': {'#': 'brick_blue', 'B': 'brick_blue', 'X': 'block_stone'},
+            'CASTLE': {'#': 'brick_castle', 'B': 'brick_castle', 'X': 'block_stone'},
+            'WATER': {'#': 'block_coral', 'B': 'block_coral', 'X': 'block_stone'},
+            'MUSHROOM': {'#': 'block_red', 'B': 'block_red', 'X': 'block_stone'}
+        }
+        
+        # Default mapping
+        sprite_map = theme_block_map.get(self.level_theme, theme_block_map['OVERWORLD'])
+        
+        # Parse map (bottom-up logic or direct indexing)
+        for r, row_str in enumerate(layout):
+            if r >= GRID_HEIGHT: break
+            for c, char in enumerate(row_str):
+                if c >= GRID_WIDTH: break
+                
+                if char == '.': continue
+                
+                # Determine Block Type & Color Fallbacks
+                block_type = 'brick' 
+                sprite_key = 'brick' # 'brick' exists in assets
+                color = (150, 75, 0) # Default Brown
+                
+                if char == '#': # Ground / Floor
+                    block_type = 'ground'
+                    if self.level_theme == 'OVERWORLD':
+                        sprite_key = 'brick' 
+                        color = (150, 75, 0) # Fallback Brown
+                    elif self.level_theme == 'UNDERGROUND':
+                         sprite_key = 'brick' 
+                         color = (0, 0, 150) # Blue
+                    elif self.level_theme == 'CASTLE':
+                         sprite_key = 'empty'
+                         color = (100, 100, 100) # Grey
+                    elif self.level_theme == 'WATER':
+                         color = (0, 150, 150) # Teal
+                    
+                elif char == 'B': # Breakable Brick
+                    sprite_key = 'brick'
+                    block_type = 'brick'
+                    if self.level_theme == 'UNDERGROUND': color = (50, 50, 255)
+                    elif self.level_theme == 'ALPS': color = (200, 200, 255)
+                    
+                elif char == 'X': # Hard Block
+                    sprite_key = 'empty' # Use 'empty' (Beaten Block) often looks like stone/metal
+                    block_type = 'solid'
+                    color = (120, 120, 120) # Grey
+                    
+                elif char == '?':
+                    sprite_key = 'question_1'
+                    block_type = 'question'
+                    color = (255, 215, 0) # Gold
+
+                # Fetch Sprite
+                # Try to load sprite
+                s_data = {'sprite': None, 'category': 'blocks'}
+                
+                # Special TINTING logic
+                base_sprite = self.sprite_manager.get_sprite('blocks', sprite_key, scale_factor=2.0)
+                
+                if base_sprite and self.level_theme == 'UNDERGROUND' and sprite_key == 'brick':
+                    # Manually tint blue for Underground to match original game style
+                    s_data['sprite'] = base_sprite.copy()
+                    s_data['sprite'].fill((100, 100, 255), special_flags=pygame.BLEND_MULT)
+                elif base_sprite:
+                     s_data['sprite'] = base_sprite
+                
+                # If lookup failed completely, use fallback colors
+                
+                # Place Block
+                self.grid.grid[r][c] = Block(color, sprite_data=s_data)
+                self.grid.grid[r][c].type = block_type
     
     def apply_level_theme(self):
         """Apply visual theme based on current level"""
-        themes = {
-            'NEON': {'bg': (20, 20, 40), 'grid': (30, 30, 50), 'accent': (255, 20, 147)},
-            'OCEAN': {'bg': (10, 30, 50), 'grid': (20, 50, 80), 'accent': (0, 200, 255)},
-            'FOREST': {'bg': (15, 35, 20), 'grid': (25, 55, 35), 'accent': (100, 255, 100)},
-            'FIRE': {'bg': (40, 15, 10), 'grid': (60, 25, 20), 'accent': (255, 100, 50)},
-            'SHADOW': {'bg': (15, 15, 25), 'grid': (25, 25, 40), 'accent': (150, 100, 200)},
-            'CRYSTAL': {'bg': (25, 35, 45), 'grid': (40, 55, 70), 'accent': (150, 220, 255)},
-            'SUNSET': {'bg': (45, 25, 30), 'grid': (70, 40, 50), 'accent': (255, 150, 80)},
-            'MIDNIGHT': {'bg': (10, 10, 20), 'grid': (20, 20, 35), 'accent': (100, 100, 180)},
-        }
-        theme = themes.get(self.level_theme, themes['NEON'])
+        # Calculate overall level if not already updated
+        self.level = (self.world - 1) * 4 + self.level_in_world
+        
+        # Select theme based on level index
+        theme_idx = (self.level - 1) % len(LEVEL_THEMES)
+        theme = LEVEL_THEMES[theme_idx]
+        
+        self.level_theme = theme['name']
         self.theme_bg = theme['bg']
-        self.theme_grid = theme['grid']
+        # self.theme_grid = theme.get('grid', (30, 30, 30)) # Not used currently?
         self.theme_accent = theme['accent']
-        self.active_world = self.level_theme # Sync active_world for run-loop logic
+        self.active_world = self.level_theme 
+        
+        print(f"[THEME] Applied level {self.level} theme: {self.level_theme}")
         
         # Spawn World "Treats" (Decorations)
-        self.clouds = [] # Reusing clouds as generic bg elements
+        self.clouds = [] 
+        # Add decorative elements based on theme
         for _ in range(25):
-            self.clouds.append(BackgroundElement(self.level_theme))
+            self.clouds.append(BackgroundElement(self.level_theme, self.sprite_manager))
+            
+        # 2.0 Feature: Generate Ground / Blocks for Theme
+        self.generate_level_decorations()
+
+    def generate_level_decorations(self):
+        """Populate the bottom decorative row based on theme"""
+        self.grid.ground_row = []
+        
+        # Determine block type based on theme
+        # Use existing 'brick' or 'empty' sprites + tinting if needed
+        block_sprite = None
+        sf = 2.0 # 2.0 * 16px (source) = 32px (BLOCK_SIZE)
+        
+        if self.level_theme == 'OVERWORLD':
+            block_sprite = self.sprite_manager.get_sprite('blocks', 'brick', scale_factor=sf) 
+        elif self.level_theme == 'UNDERGROUND':
+            s = self.sprite_manager.get_sprite('blocks', 'brick', scale_factor=sf)
+            if s: 
+                block_sprite = s.copy()
+                block_sprite.fill((100, 100, 255), special_flags=pygame.BLEND_MULT)
+        elif self.level_theme == 'CASTLE':
+            block_sprite = self.sprite_manager.get_sprite('blocks', 'empty', scale_factor=sf) 
+        elif self.level_theme == 'WATER':
+             # Fallback to empty (solid block)
+             block_sprite = self.sprite_manager.get_sprite('blocks', 'empty', scale_factor=sf)
+        elif self.level_theme == 'MUSHROOM':
+             block_sprite = self.sprite_manager.get_sprite('blocks', 'brick', scale_factor=sf)
+             
+        # Fallback
+        if not block_sprite:
+             block_sprite = self.sprite_manager.get_sprite('blocks', 'brick', scale_factor=sf)
+             
+        # DEBUG
+        print(f"[DEBUG] BLOCK_SIZE: {BLOCK_SIZE}")
+        if block_sprite:
+            print(f"[DEBUG] block_sprite size: {block_sprite.get_size()}")
+        
+        # Generate Row
+        for x in range(GRID_WIDTH):
+            self.grid.ground_row.append(block_sprite)
+
 
     def setup_boss_arena(self):
         """Setup the partially filled line above the boss"""
@@ -2952,6 +3165,8 @@ class Tetris:
         if self.level_in_world > 4:
             self.level_in_world = 1
             self.world += 1
+            
+        self.apply_level_theme() # Update theme for new level
     
         # Go to Results Screen
         self.game_state = 'WORLD_CLEAR'
@@ -3935,7 +4150,9 @@ class Tetris:
                 if hasattr(c, 'draw'):
                     c.draw(self.game_surface)
             
-            self.grid.draw(self.game_surface, self.total_time)
+            self.grid.draw(self.game_surface, self.total_time, 
+                         bg_color=getattr(self, 'theme_bg', None),
+                         accent_color=getattr(self, 'theme_accent', None))
             
             # Line Flash Highlight (Subtler)
             if getattr(self, 'line_flash_timer', 0) > 0:
