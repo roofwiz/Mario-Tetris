@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARIO ARENA V2 - ZERO BUTTON SUPREME</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --mario-red: #ff0000;
+            --luigi-green: #00ff00;
+            --bg-dark: #050510;
+            --panel-bg: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg-dark);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #header {
+            width: 100%;
+            padding: 15px;
+            background: rgba(0, 255, 204, 0.1);
+            border-bottom: 2px solid #00ffcc;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: #00ffcc;
+            text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+        }
+
+        #game-container {
+            display: flex;
+            gap: 40px;
+            margin-top: 30px;
+            padding: 20px;
+            background: var(--panel-bg);
+            border-radius: 20px;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .board-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        canvas {
+            border: 4px solid #444;
+            border-radius: 5px;
+            background: #000;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 1);
+        }
+
+        #my-board {
+            border-color: #00ffcc;
+        }
+
+        #opp-board {
+            border-color: #ff4444;
+            width: 200px;
+            height: 400px;
+        }
+
+        .label {
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        #status-bar {
+            position: absolute;
+            bottom: 20px;
+            padding: 10px 30px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 30px;
+            font-family: monospace;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+        }
+
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 16, 0.95);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        #entry-btn {
+            padding: 25px 50px;
+            font-size: 28px;
+            background: #00ffcc;
+            color: #000;
+            border: none;
+            border-radius: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.4);
+            transition: 0.2s;
+        }
+
+        #entry-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-family: monospace;
+            color: #00ffcc;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="header">MARIO ARENA V2 - SUPREME SYNC</div>
+
+    <div id="game-container">
+        <div class="board-wrapper">
+            <div class="label" id="my-label">YOU</div>
+            <canvas id="my-canvas" width="300" height="600"></canvas>
+        </div>
+        <div class="board-wrapper">
+            <div class="label" id="opp-label">OPPONENT</div>
+            <canvas id="opp-canvas" width="200" height="400"></canvas>
+        </div>
+    </div>
+
+    <div id="status-bar">CONNECTING...</div>
+
+    <div id="overlay">
+        <button id="entry-btn">ENTER MATCH ARENA</button>
+        <div class="loading-text" id="loader-msg">READY...</div>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const firebaseConfig = {
+            databaseURL: "https://mario-tetris-game-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const ROOM_ID = "arena_js_v1";
+
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK_SIZE = 30;
+        const OPP_BLOCK_SIZE = 20;
+
+        const COLORS = [
+            null,
+            '#00f0f0', // I
+            '#f0f000', // O
+            '#a000f0', // T
+            '#00f000', // S
+            '#f00000', // Z
+            '#0000f0', // J
+            '#f0a000', // L
+            '#888888'  // Gray (Garbage)
+        ];
+
+        const SHAPES = [
+            [],
+            [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], // I
+            [[2, 2], [2, 2]], // O
+            [[0, 3, 0], [3, 3, 3], [0, 0, 0]], // T
+            [[0, 4, 4], [4, 4, 0], [0, 0, 0]], // S
+            [[5, 5, 0], [0, 5, 5], [0, 0, 0]], // Z
+            [[6, 0, 0], [6, 6, 6], [0, 0, 0]], // J
+            [[0, 0, 7], [7, 7, 7], [0, 0, 0]]  // L
+        ];
+
+        // --- STATE ---
+        let role = null;
+        let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        let pos = { x: 3, y: 0 };
+        let piece = null;
+        let oppGrid = Array(ROWS * COLS).fill(0);
+        let gameActive = false;
+        let lastTime = 0;
+        let dropCounter = 0;
+        let dropInterval = 1000;
+
+        const canvas = document.getElementById('my-canvas');
+        const ctx = canvas.getContext('2d');
+        const oppCanvas = document.getElementById('opp-canvas');
+        const oppCtx = oppCanvas.getContext('2d');
+
+        // --- CORE LOGIC ---
+        function createPiece() {
+            const id = Math.floor(Math.random() * 7) + 1;
+            return {
+                matrix: SHAPES[id],
+                pos: { x: 3, y: 0 }
+            };
+        }
+
+        function drawBoard(context, matrix, scale) {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = COLORS[value];
+                        context.fillRect(x * scale, y * scale, scale - 1, scale - 1);
+                    }
+                });
+            });
+        }
+
+        function drawPiece(context, p, scale) {
+            p.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = COLORS[value];
+                        context.fillRect((p.pos.x + x) * scale, (p.pos.y + y) * scale, scale - 1, scale - 1);
+                    }
+                });
+            });
+        }
+
+        function collide(board, p) {
+            const [m, o] = [p.matrix, p.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 && (board[y + o.y] && board[y + o.y][x + o.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function merge(board, p) {
+            p.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        board[y + p.pos.y][x + p.pos.x] = value;
+                    }
+                });
+            });
+        }
+
+        function clearLines() {
+            outer: for (let y = ROWS - 1; y >= 0; --y) {
+                for (let x = 0; x < COLS; ++x) {
+                    if (grid[y][x] === 0) continue outer;
+                }
+                const row = grid.splice(y, 1)[0].fill(0);
+                grid.unshift(row);
+                ++y;
+            }
+        }
+
+        function drop() {
+            piece.pos.y++;
+            if (collide(grid, piece)) {
+                piece.pos.y--;
+                merge(grid, piece);
+                clearLines();
+                piece = createPiece();
+                if (collide(grid, piece)) {
+                    grid.forEach(row => row.fill(0)); // Game Over
+                }
+                sync();
+            }
+            dropCounter = 0;
+        }
+
+        function rotate(matrix) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+                }
+            }
+            matrix.forEach(row => row.reverse());
+        }
+
+        function update(time = 0) {
+            if (!gameActive) return;
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                drop();
+            }
+            drawBoard(ctx, grid, BLOCK_SIZE);
+            drawPiece(ctx, piece, BLOCK_SIZE);
+            renderOpp();
+            requestAnimationFrame(update);
+        }
+
+        function renderOpp() {
+            oppCtx.fillStyle = '#000';
+            oppCtx.fillRect(0, 0, oppCanvas.width, oppCanvas.height);
+            oppGrid.forEach((val, i) => {
+                if (val > 0) {
+                    const x = i % COLS;
+                    const y = Math.floor(i / COLS);
+                    oppCtx.fillStyle = COLORS[val] || '#888';
+                    oppCtx.fillRect(x * OPP_BLOCK_SIZE, y * OPP_BLOCK_SIZE, OPP_BLOCK_SIZE - 1, OPP_BLOCK_SIZE - 1);
+                }
+            });
+        }
+
+        // --- NETWORKING ---
+        function sync() {
+            if (!role) return;
+            const flat = grid.flat().join('');
+            db.ref(`battles/${ROOM_ID}/${role}`).update({
+                grid: flat,
+                ts: Date.now()
+            });
+        }
+
+        async function joinArena() {
+            document.getElementById('loader-msg').innerText = "FETCHING ROLE...";
+            const snapshot = await db.ref(`battles/${ROOM_ID}`).get();
+            const data = snapshot.val();
+            const now = Date.now();
+
+            if (!data || !data.p1 || (now - data.p1.ts > 10000)) {
+                role = 'p1';
+                await db.ref(`battles/${ROOM_ID}`).set({
+                    state: 'waiting',
+                    p1: { ts: now, grid: '0'.repeat(200) },
+                    p2: { ts: 0, grid: '0'.repeat(200) }
+                });
+            } else if (!data.p2 || (now - data.p2.ts > 10000)) {
+                role = 'p2';
+                await db.ref(`battles/${ROOM_ID}/p2`).update({
+                    ts: now, grid: '0'.repeat(200)
+                });
+            } else {
+                alert("ARENA FULL! Try again in a few seconds.");
+                location.reload();
+                return;
+            }
+
+            document.getElementById('my-label').innerText = `YOU (${role.toUpperCase()})`;
+            document.getElementById('status-bar').innerText = `ROLE: ${role.toUpperCase()} | SEARCHING...`;
+
+            // Listen for changes
+            db.ref(`battles/${ROOM_ID}`).on('value', (snap) => {
+                const val = snap.val();
+                if (!val) return;
+
+                const other = (role === 'p1' ? val.p2 : val.p1);
+                if (other && (Date.now() - other.ts < 5000)) {
+                    oppGrid = other.grid.split('').map(Number);
+                    document.getElementById('status-bar').innerText = `SYNC OK | OPPONENT LIVE`;
+                    if (val.state === 'waiting' && role === 'p1') {
+                        db.ref(`battles/${ROOM_ID}`).update({ state: 'playing' });
+                    }
+                } else {
+                    document.getElementById('status-bar').innerText = `WAITING FOR OPPONENT...`;
+                }
+
+                if (val.state === 'playing' && !gameActive) {
+                    startGame();
+                }
+            });
+
+            // Heartbeat
+            setInterval(() => {
+                db.ref(`battles/${ROOM_ID}/${role}`).update({ ts: Date.now() });
+            }, 2000);
+        }
+
+        function startGame() {
+            document.getElementById('overlay').style.display = 'none';
+            gameActive = true;
+            piece = createPiece();
+            update();
+        }
+
+        // --- CONTROLS ---
+        document.addEventListener('keydown', event => {
+            if (!gameActive) return;
+            if (event.keyCode === 37) { // Left
+                piece.pos.x--;
+                if (collide(grid, piece)) piece.pos.x++;
+            } else if (event.keyCode === 39) { // Right
+                piece.pos.x++;
+                if (collide(grid, piece)) piece.pos.x--;
+            } else if (event.keyCode === 40) { // Down
+                drop();
+            } else if (event.keyCode === 38) { // Up (Rotate)
+                rotate(piece.matrix);
+                if (collide(grid, piece)) rotate(piece.matrix), rotate(piece.matrix), rotate(piece.matrix);
+            } else if (event.keyCode === 32) { // Space (Hard Drop)
+                while (!collide(grid, piece)) piece.pos.y++;
+                piece.pos.y--;
+                drop();
+            }
+            sync();
+        });
+
+        document.getElementById('entry-btn').addEventListener('click', () => {
+            document.getElementById('entry-btn').style.display = 'none';
+            joinArena();
+        });
+
+    </script>
+</body>
+
+</html>
