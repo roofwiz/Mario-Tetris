@@ -587,11 +587,11 @@
                         let gy = pos[1] + by, gx = pos[0] + bx;
                         if (gy >= 0) grid[gy][gx] = piece.color;
                     });
-                    sfx.lock?.play();
+                    audio.play('lock');
                     clearing = grid.map((r, i) => r.every(c => c !== null) ? i : -1).filter(i => i !== -1);
                     if (clearing.length > 0) {
                         score += clearing.length * 1000;
-                        clearT = 0.6; sfx.clear?.play();
+                        clearT = 0.6; audio.play('clear');
                         // Send garbage
                         get(ref(db, `battles/${room}/${role}/atk`)).then(s => {
                             fbUpdate(ref(db, `battles/${room}/${role}`), { atk: (s.val() || 0) + clearing.length });
@@ -717,16 +717,16 @@
         window.onkeydown = (e) => {
             keys[e.key] = true;
             if (phase === 'play' && clearing.length === 0) {
-                if (e.key === 'ArrowLeft') { pos[0]--; if (collide(pos, piece.shape)) pos[0]++; else sfx.move?.play(); }
-                if (e.key === 'ArrowRight') { pos[0]++; if (collide(pos, piece.shape)) pos[0]--; else sfx.move?.play(); }
+                if (e.key === 'ArrowLeft') { pos[0]--; if (collide(pos, piece.shape)) pos[0]++; else audio.play('move'); }
+                if (e.key === 'ArrowRight') { pos[0]++; if (collide(pos, piece.shape)) pos[0]--; else audio.play('move'); }
                 if (e.key === 'ArrowUp') {
                     const old = piece.shape;
                     piece.shape = piece.shape.map(([x, y]) => [-y, x]);
-                    if (collide(pos, piece.shape)) piece.shape = old; else sfx.rotate?.play();
+                    if (collide(pos, piece.shape)) piece.shape = old; else audio.play('rotate');
                 }
                 if (e.key === ' ') {
                     while (!collide([pos[0], pos[1] + 1], piece.shape)) pos[1]++;
-                    fallDt = 10; sfx.lock?.play();
+                    fallDt = 10; audio.play('lock');
                 }
                 syncDirty = true;
             }
