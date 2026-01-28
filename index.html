@@ -489,7 +489,7 @@
             syncDirty = true;
         }
 
-        function update(dt) {
+        function gameTick(dt) {
             if (phase !== 'play') return;
 
             if (shake > 0) shake -= dt * 40;
@@ -688,7 +688,7 @@
         function gameLoop(time) {
             const dt = (time - lastTime) / 1000;
             lastTime = time;
-            update(Math.min(dt, 0.1));
+            gameTick(Math.min(dt, 0.1));
             draw();
             requestAnimationFrame(gameLoop);
         }
