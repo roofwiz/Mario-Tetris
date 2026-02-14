@@ -1,0 +1,83 @@
+<html lang="en-us">
+<script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25
+    data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys, asyncio, platform, json, os
+from pathlib import Path
+import embed, pygame
+
+# V104 NUCLEAR CLEAN LOADER
+async def custom_site():
+    import platform
+    platform.document.body.style.background = "#1a1a2e" # Deep Blue
+    pygame.init()
+    
+    # Use ZIP to bypass all APK blockers
+    apk = "mario_v104.zip"
+    bundle = "mario_v104"
+    mount_point = f"/data/data/{bundle}"
+    Path(mount_point).mkdir(parents=True, exist_ok=True)
+    
+    cfg = {"io": "url", "type":"mount", "mount" : {"point" : mount_point, "path" : "/"}, "path" : "/"}
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+    while not track.ready: await asyncio.sleep(.1)
+    
+    platform.run_main(PyConfig, loaderhome=mount_point, loadermain=None)
+    while embed.counter() < 0: await asyncio.sleep(.1)
+    
+    # Find main.py (Subfolder Assets)
+    main = Path(mount_point) / "assets" / "main.py"
+    if not main.exists():
+        main = Path(mount_point) / "main.py"
+        
+    os.chdir(str(main.parent))
+    sys.path.insert(0, str(main.parent))
+    
+    await TopLevel_async_handler.start_toplevel(platform.shell)
+    __import__(__name__).__file__ = str(main)
+    await shell.runpy(main)
+
+import asyncio
+asyncio.run( custom_site() )
+# --></script>
+
+<head>
+    <title>MARIO BATTLE V104</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a2e;
+            color: white;
+            font-family: arial;
+            text-align: center;
+        }
+
+        canvas.emscripten {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 5;
+        }
+
+        #transfer {
+            position: relative;
+            z-index: 10;
+            padding-top: 50px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="transfer">
+        <h1>V104 MARIO BATTLE</h1>
+        <div id="status">Loading Engine...</div>
+        <progress value="0" max="100" id="progress"></progress>
+    </div>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+    <script type="application/javascript">
+        config = { archive: "mario_v104", cdn: "https://pygame-web.github.io/archives/0.9/", autorun: 0, PYBUILD: "3.12" }
+    </script>
+</body>
+
+</html>

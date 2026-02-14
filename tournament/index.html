@@ -1,0 +1,124 @@
+<html lang="en-us">
+
+<head>
+    <title>MARIO TOURNAMENT V101</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            background-color: #503c0a;
+            font-family: arial;
+            color: white;
+            overflow: hidden;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            padding-top: 50px;
+        }
+
+        .btn {
+            padding: 25px 60px;
+            font-size: 28px;
+            cursor: pointer;
+            border: 4px solid white;
+            border-radius: 15px;
+            margin: 20px;
+            font-weight: bold;
+        }
+
+        #m {
+            background: #d23232;
+            box-shadow: 0 0 20px #d23232;
+        }
+
+        #l {
+            background: #32d232;
+            box-shadow: 0 0 20px #32d232;
+            color: black;
+        }
+
+        canvas.emscripten {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 5;
+            background-color: transparent;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            color: #00ff00;
+            font-family: monospace;
+        }
+    </style>
+    <script>
+        window.multiplayer_choice = "none";
+        function sel(c) { window.multiplayer_choice = c; document.getElementById('ui').style.display = 'none'; }
+    </script>
+</head>
+
+<body>
+    <div id="ui">
+        <h1>MARIO BATTLE V101</h1>
+        <p>SELECT YOUR CHALLENGER</p>
+        <button id="m" class="btn" onclick="sel('p1')">MARIO (1)</button>
+        <button id="l" class="btn" onclick="sel('p2')">LUIGI (2)</button>
+    </div>
+    <div id="status">Loading Tournament Engine V101...</div>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25
+        data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys, asyncio, platform, json, os
+from pathlib import Path
+import embed
+import pygame
+
+async def custom_site():
+    import platform
+    platform.document.body.style.background = "#503c0a"
+    pygame.init()
+    
+    # 1. DOWNLOAD ENGINE
+    apk = "engine.data"
+    cfg = {"io": "url", "type":"mount", "mount" : {"point" : "/data/data/mario_v101", "path" : "/"}, "path" : "/"}
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+    while not track.ready: await asyncio.sleep(.1)
+    
+    # 2. EXTRACT & SEARCH
+    platform.run_main(PyConfig, loaderhome="/data/data/mario_v101", loadermain=None)
+    while embed.counter() < 0: await asyncio.sleep(.1)
+    
+    # AGGRESSIVE SEARCH
+    found_main = "/data/data/mario_v101/main.py"
+    if not os.path.exists(found_main):
+        for root, dirs, files in os.walk("/data/data"):
+            if "main.py" in files:
+                found_main = os.path.join(root, "main.py")
+                break
+    
+    appdir = os.path.dirname(found_main)
+    os.chdir(appdir)
+    sys.path.insert(0, appdir)
+    
+    platform.window.document.getElementById("status").innerHTML = f"Engine Ready at {appdir}. Launching..."
+    await TopLevel_async_handler.start_toplevel(platform.shell)
+    __import__(__name__).__file__ = found_main
+    await shell.runpy(Path(found_main))
+
+import asyncio
+asyncio.run( custom_site() )
+# --></script>
+    <script type="application/javascript">
+        config = { archive: "", cdn: "https://pygame-web.github.io/archives/0.9/", autorun: 0, PYBUILD: "3.12" }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,134 @@
+<html lang="en-us">
+
+<head>
+    <title>ULTIMATE BATTLE V99</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            background-color: #ff64c8;
+            font-family: 'Courier New', Courier, monospace;
+            color: white;
+            overflow: hidden;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .bypass-btn {
+            pointer-events: auto;
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            border: 4px solid black;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.1s;
+        }
+
+        .bypass-btn:active {
+            transform: scale(0.9);
+        }
+
+        #btn-mario {
+            background-color: #ff3232;
+        }
+
+        #btn-luigi {
+            background-color: #32ff32;
+            color: black;
+        }
+
+        canvas.emscripten {
+            border: 0 none;
+            background-color: transparent;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 5;
+        }
+
+        #status-area {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 101;
+            font-size: 12px;
+        }
+    </style>
+    <script type="application/javascript">
+        window.multiplayer_choice = "none";
+        function selectRole(role) {
+            window.multiplayer_choice = role;
+            document.getElementById('ui-layer').style.display = 'none';
+        }
+    </script>
+</head>
+
+<body>
+    <div id="ui-layer">
+        <h2>INPUT BYPASS: SELECT YOUR FIGHTER</h2>
+        <button id="btn-mario" class="bypass-btn" onclick="selectRole('p1')">JOIN AS MARIO</button>
+        <button id="btn-luigi" class="bypass-btn" onclick="selectRole('p2')">JOIN AS LUIGI</button>
+        <p>If the game screen doesn't respond to keys, click these buttons!</p>
+    </div>
+
+    <div id="status-area">Loading Engine V99...</div>
+
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25
+        data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys, asyncio, platform, json
+from pathlib import Path
+import embed
+import pygame
+
+async def custom_site():
+    import platform
+    platform.document.body.style.background = "#ff64c8"
+    pygame.init()
+    screen = pygame.display.set_mode([1024, 720], pygame.SRCALPHA, 32)
+    
+    apk = "mario_battle_pro_v99.data"
+    bundle = "mario_battle_pro_v99"
+    appdir = Path(f"/data/data/{bundle}")
+    appdir.mkdir()
+
+    cfg = {"io": "url", "type":"mount", "mount" : {"point" : appdir.as_posix(), "path" : "/"}, "path" : f"/ => {appdir.as_posix()}"}
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+
+    while not track.ready: await asyncio.sleep(.1)
+    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
+    while embed.counter()<0: await asyncio.sleep(.1)
+
+    main = appdir / "assets" / "main.py"
+    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
+    __import__(__name__).__file__ = str(main)
+    await shell.runpy(main)
+
+import asyncio
+asyncio.run( custom_site() )
+# --></script>
+
+    <script type="application/javascript">
+        config = {
+            xtermjs: "1", _sdl2: "canvas", user_canvas: 0, user_canvas_managed: 0,
+            ume_block: 1, can_close: 0, archive: "mario_battle_pro_v99",
+            gui_debug: 3, cdn: "https://pygame-web.github.io/archives/0.9/",
+            autorun: 0, PYBUILD: "3.12"
+        }
+    </script>
+</body>
+
+</html>

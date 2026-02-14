@@ -1,0 +1,141 @@
+<html lang="en-us">
+
+<head>
+    <title>MARIO BATTLE V100 PRO</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            background-color: #0a1e3c;
+            font-family: arial;
+            color: white;
+            overflow: hidden;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            padding-top: 50px;
+        }
+
+        .btn {
+            padding: 25px 60px;
+            font-size: 28px;
+            cursor: pointer;
+            border: 4px solid white;
+            border-radius: 15px;
+            margin: 20px;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #m {
+            background: #d23232;
+            box-shadow: 0 0 20px #d23232;
+        }
+
+        #l {
+            background: #32d232;
+            box-shadow: 0 0 20px #32d232;
+            color: black;
+        }
+
+        canvas.emscripten {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 5;
+            background-color: transparent;
+        }
+
+        #status-msg {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            color: #00ff00;
+            font-family: monospace;
+        }
+    </style>
+    <script>
+        window.multiplayer_choice = "none";
+        function sel(c) {
+            window.multiplayer_choice = c;
+            document.getElementById('ui').style.display = 'none';
+            document.getElementById('status-msg').innerHTML = "Character: " + c.toUpperCase() + " selected. Starting engine...";
+        }
+    </script>
+</head>
+
+<body>
+    <div id="ui">
+        <h1>MARIO BATTLE V100</h1>
+        <p>SELECT YOUR CHALLENGER</p>
+        <button id="m" class="btn" onclick="sel('p1')">MARIO (1)</button>
+        <button id="l" class="btn" onclick="sel('p2')">LUIGI (2)</button>
+    </div>
+    <div id="status-msg">Loading V100 Stability Engine...</div>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25
+        data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys, asyncio, platform, json
+from pathlib import Path
+import embed
+import pygame
+import os
+
+async def custom_site():
+    import platform
+    platform.document.body.style.background = "#0a1e3c"
+    pygame.init()
+    
+    # MATCH INTERNAL PYGBAG NAME
+    apk = "engine.data"
+    bundle = "mario_battle_pro_v100"
+    appdir = Path(f"/data/data/{bundle}")
+    appdir.mkdir(parents=True, exist_ok=True)
+    
+    cfg = {"io": "url", "type":"mount", "mount" : {"point" : appdir.as_posix(), "path" : "/"}, "path" : f"/ => {appdir.as_posix()}"}
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+    
+    while not track.ready: await asyncio.sleep(.1)
+    
+    # Try different potential mount points if the first one fails
+    platform.run_main(PyConfig, loaderhome=appdir, loadermain=None)
+    while embed.counter() < 0: await asyncio.sleep(.1)
+    
+    # FIND THE MAIN FILE AGGRESSIVELY
+    main = appdir / "main.py"
+    if not main.exists():
+        # Search for it
+        for root, dirs, files in os.walk("/data/data/"):
+            if "main.py" in files:
+                main = Path(root) / "main.py"
+                appdir = Path(root)
+                break
+    
+    os.chdir(str(appdir))
+    sys.path.insert(0, str(appdir))
+    
+    platform.window.document.getElementById("status-msg").innerHTML = f"Engine Mounted at {appdir}. Launching..."
+    await TopLevel_async_handler.start_toplevel(platform.shell)
+    __import__(__name__).__file__ = str(main)
+    await shell.runpy(main)
+
+import asyncio
+asyncio.run( custom_site() )
+# --></script>
+    <script type="application/javascript">
+        config = { archive: "", cdn: "https://pygame-web.github.io/archives/0.9/", autorun: 0, PYBUILD: "3.12" }
+    </script>
+</body>
+
+</html>

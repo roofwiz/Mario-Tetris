@@ -1,0 +1,172 @@
+<html lang="en-us">
+
+<head>
+    <title>MARIO BATTLE V105 PRO</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            background-color: #0a141e;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            padding-top: 15vh;
+            background: rgba(0, 0, 0, 0.85);
+            height: 100vh;
+        }
+
+        .btn {
+            padding: 25px 50px;
+            font-size: 28px;
+            cursor: pointer;
+            border: 4px solid white;
+            border-radius: 15px;
+            margin: 15px;
+            font-weight: bold;
+            width: 300px;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #m-btn {
+            background: #e61a1a;
+            box-shadow: 0 0 20px #e61a1a;
+        }
+
+        #l-btn {
+            background: #1ae61a;
+            box-shadow: 0 0 20px #1ae61a;
+            color: #0a141e;
+        }
+
+        canvas.emscripten {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 5;
+            background: transparent;
+        }
+
+        #status-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            color: #00ffcc;
+            font-family: monospace;
+        }
+
+        #ume-gate {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+    </style>
+    <script>
+        window.multiplayer_choice = "none";
+        function selectRole(role) {
+            window.multiplayer_choice = role;
+            document.getElementById('ui-layer').style.display = 'none';
+            console.log("ROLE CHOSEN:", role);
+        }
+        function unlockUME() {
+            document.getElementById('ume-gate').style.display = 'none';
+            console.log("UME UNLOCKED");
+        }
+    </script>
+</head>
+
+<body>
+    <div id="ume-gate" onclick="unlockUME()">
+        <div style="text-align: center;">
+            <h1 style="font-size: 48px; color: #00ffcc;">MARIO BATTLE PRO</h1>
+            <p style="font-size: 24px; color: #fff;">TAP ANYWHERE TO ACTIVATE ENGINE</p>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <h1>MARIO BATTLE V105</h1>
+        <p>SELECT YOUR TOURNAMENT FIGHTER</p>
+        <div style="margin-top: 50px;">
+            <button id="m-btn" class="btn" onclick="selectRole('p1')">MARIO (P1)</button><br>
+            <button id="l-btn" class="btn" onclick="selectRole('p2')">LUIGI (P2)</button>
+        </div>
+        <p style="margin-top: 40px; color: #888;">Input keys: [1] for Mario, [2] for Luigi</p>
+    </div>
+
+    <div id="status-bar">Engine Status: Initializing...</div>
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=1></canvas>
+
+    <script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25
+        data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+import sys, asyncio, platform, json, os
+from pathlib import Path
+import embed, pygame
+
+async def custom_site():
+    import platform
+    platform.document.body.style.background = "#0a141e"
+    
+    def log(msg):
+        platform.window.document.getElementById("status-bar").innerHTML = f"STATUS: {msg}"
+        print(f"BOOT: {msg}")
+
+    pygame.init()
+    
+    # 1. DOWNLOAD ZIP ENGINE (V105)
+    apk = "engine_v105.zip"
+    mount_point = "/data/data/mario_v105"
+    Path(mount_point).mkdir(parents=True, exist_ok=True)
+    
+    log("Downloading high-performance engine...")
+    cfg = {"io": "url", "type":"mount", "mount" : {"point" : mount_point, "path" : "/"}, "path" : "/"}
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+    while not track.ready: await asyncio.sleep(.1)
+    
+    log("Engine mounted. Extracting assets...")
+    platform.run_main(PyConfig, loaderhome=mount_point, loadermain=None)
+    while embed.counter() < 0: await asyncio.sleep(.1)
+    
+    # 2. FIND AND LAUNCH
+    main = Path(mount_point) / "assets" / "main.py"
+    if not main.exists(): main = Path(mount_point) / "main.py"
+    
+    app_dir = str(main.parent)
+    os.chdir(app_dir)
+    sys.path.insert(0, app_dir)
+    
+    log("Waiting for User Activation...")
+    while not platform.window.MM.UME: await asyncio.sleep(.1)
+    
+    log("Engine Online. Launching Match...")
+    await TopLevel_async_handler.start_toplevel(platform.shell)
+    __import__(__name__).__file__ = str(main)
+    await shell.runpy(main)
+
+import asyncio
+asyncio.run( custom_site() )
+# --></script>
+    <script type="application/javascript">
+        config = { archive: "", cdn: "https://pygame-web.github.io/archives/0.9/", autorun: 0, PYBUILD: "3.12" }
+    </script>
+</body>
+
+</html>
